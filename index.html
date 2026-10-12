@@ -371,8 +371,8 @@
 <div class="topbar">
   <h1>bnb care</h1>
   <div class="tabs">
-    <button class="tab" data-tab="today">일정</button>
     <button class="tab" data-tab="cal">달력</button>
+    <button class="tab" data-tab="today">일정</button>
     <button class="tab" data-tab="map">지도</button>
     <button class="tab" data-tab="all">숙소</button>
     <button class="tab" data-tab="staff">청소담당</button>
@@ -1004,6 +1004,7 @@ function renderCalendarTab(){
       <button data-cal-today="1">오늘</button>
       <button data-cal-view="grid" class="${state.calView==='grid'?'on':''}">달력</button>
       <button data-cal-view="list" class="${state.calView==='list'?'on':''}">목록</button>
+      ${isAdmin()?'<button data-cal-import="1">📥 가져오기</button>':''}
     </div>
     <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 10px;">이 달 일정 ${Object.keys(state.monthRecords).length}일 · 총 ${total}건 · 날짜를 누르면 그날 일정으로 이동</div>`;
   if(state.calView === 'list'){
@@ -1047,6 +1048,90 @@ function attachCalHandlers(){
   document.querySelectorAll('[data-cal-today]').forEach(b=> b.onclick = ()=>{ const d = new Date(); state.calMonth = { year:d.getFullYear(), month:d.getMonth() }; watchMonth(); render(); });
   document.querySelectorAll('[data-cal-view]').forEach(b=> b.onclick = ()=>{ state.calView = b.dataset.calView; try{ localStorage.setItem('pref:calView', state.calView); }catch(e){} render(); });
   document.querySelectorAll('[data-cal-day]').forEach(el=> el.onclick = async ()=>{ state.tab = 'today'; await selectScheduleDate(el.dataset.calDay); window.scrollTo(0,0); });
+  document.querySelectorAll('[data-cal-import]').forEach(b=> b.onclick = openImportSheet);
+}
+
+function parseScheduleText(text, defYear){
+  const out = {};
+  String(text||'').split(/\r?\n/).forEach(line=>{
+    const m = line.match(/^\s*(?:(\d{4})[-\/.])?(\d{1,2})\s*[\/\-.월]\s*(\d{1,2})\s*일?\s*(?:\([^)]*\))?\s*[:：]?\s*(.*)$/);
+    if(!m) return;
+    const y = m[1] ? Number(m[1]) : defYear;
+    const ds = y+'-'+pad2(Number(m[2]))+'-'+pad2(Number(m[3]));
+    m[4].split(/[,，]/).map(x=>x.trim()).filter(Boolean).forEach(it=>{
+      const parts = it.split('|');
+      (out[ds] = out[ds] || []).push({ raw: parts[0].trim(), note: parts.slice(1).join('|').trim() });
+    });
+  });
+  return out;
+}
+function openImportSheet(){
+  const old = document.getElementById('overlayImp'); if(old) old.remove();
+  const root = document.createElement('div');
+  root.className = 'overlay'; root.id = 'overlayImp';
+  const y = state.calMonth ? state.calMonth.year : new Date().getFullYear();
+  const stepInput = ()=>{
+    root.innerHTML = `<div class="sheet">
+      <h2>📥 일정 가져오기</h2>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">한 줄에 한 날짜씩 붙여넣어줘. 예) 10/3: 홍대102호, 창천동잇다303호<br>이미 등록된 일정은 지워지지 않고, 없는 숙소만 추가돼.</div>
+      <textarea id="imp_text" style="width:100%;height:220px;font-size:13px;" placeholder="10/2: 동교스테이C, 엘지팰리스1208호&#10;10/3: 홍대102호, 서교동복층"></textarea>
+      <div class="sheet-actions"><button class="cancel-btn" id="imp_cancel">취소</button><button class="save-btn" id="imp_next">다음 (미리보기)</button></div></div>`;
+    document.getElementById('imp_cancel').onclick = ()=> root.remove();
+    document.getElementById('imp_next').onclick = ()=>{
+      const data = parseScheduleText(document.getElementById('imp_text').value, y);
+      if(!Object.keys(data).length){ alert('날짜 형식(예: 10/3: 숙소, 숙소)으로 된 줄이 없어.'); return; }
+      stepMap(data);
+    };
+  };
+  const stepMap = (data)=>{
+    const names = []; Object.values(data).forEach(arr=>arr.forEach(e=>{ if(!names.includes(e.raw)) names.push(e.raw); }));
+    const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const guess = {}; names.forEach(n=>{ const m = findBestPropertyMatch(n); guess[n] = m ? m.id : ''; });
+    const unmatched = names.filter(n=>!guess[n]);
+    const total = Object.values(data).reduce((a,b)=>a+b.length,0);
+    root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
+      <h2>이름 확인</h2>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${Object.keys(data).length}일 · ${total}건 · 숙소 이름 ${names.length}종류${unmatched.length?` · <b style="color:var(--clay)">못 찾은 ${unmatched.length}개</b>`:' · 모두 찾았어'}<br>못 찾은 이름은 숙소를 골라줘. <span style="color:#c27a00">추정</span>은 비슷한 이름으로 맞춘 거라 확인해줘. 건너뛰면 등록하지 않아.</div>
+      ${names.map((n,i)=>`<div style="display:flex;gap:6px;align-items:center;margin:4px 0;font-size:13px;">
+        <div style="flex:0 0 42%;${guess[n]?'':'color:var(--clay);font-weight:700;'}">${esc(n)}${(guess[n] && normalizeForMatch((propById(guess[n])||{}).name)!==normalizeForMatch(n))?' <span style="color:#c27a00;font-size:11px;">추정</span>':''}</div>
+        <select data-imp-map="${i}" style="flex:1;min-width:0;"><option value="">건너뛰기</option>${props.map(pp=>`<option value="${esc(pp.id)}" ${guess[n]===pp.id?'selected':''}>${esc(pp.name)}</option>`).join('')}</select></div>`).join('')}
+      <div class="sheet-actions"><button class="cancel-btn" id="imp_back">뒤로</button><button class="save-btn" id="imp_go">가져오기</button></div></div>`;
+    document.getElementById('imp_back').onclick = stepInput;
+    document.getElementById('imp_go').onclick = async ()=>{
+      const map = {}; root.querySelectorAll('[data-imp-map]').forEach(sel=>{ map[names[Number(sel.dataset.impMap)]] = sel.value; });
+      const btn = document.getElementById('imp_go'); btn.disabled = true; btn.textContent = '저장 중…';
+      let added = 0, exist = 0, skipped = 0, days = 0, failed = 0;
+      for(const ds of Object.keys(data).sort()){
+        let rec = null;
+        try{ const r = await window.storage.get('today:'+ds, false); if(r && r.value) rec = JSON.parse(r.value); }catch(e){}
+        let changed = false;
+        if(!rec){ rec = { propertyIds:[], tasks:{}, priorityIds:[], excludedIds:[] }; }
+        rec.propertyIds = rec.propertyIds || []; rec.tasks = rec.tasks || {}; rec.priorityIds = rec.priorityIds || []; rec.excludedIds = rec.excludedIds || [];
+        data[ds].forEach(e=>{
+          const id = map[e.raw];
+          if(!id){ skipped++; return; }
+          if(rec.propertyIds.includes(id)){ exist++; return; }
+          const pr = propById(id);
+          rec.propertyIds.push(id);
+          rec.tasks[id] = tasksForProperty(pr).map(text=>({text, done:false}));
+          if(pr && pr.alwaysPriority && !rec.priorityIds.includes(id)) rec.priorityIds.push(id);
+          rec.excludedIds = rec.excludedIds.filter(x=>x.id!==id);
+          if(e.note){ rec.dayNotes = rec.dayNotes || {}; rec.dayNotes[id] = e.note; }
+          added++; changed = true;
+        });
+        if(changed){
+          try{ await window.storage.set('today:'+ds, JSON.stringify(rec), false); days++; }catch(err){ failed++; }
+        }
+      }
+      root.remove();
+      if(state.selectedDate) await loadTodayRecord();
+      render();
+      alert(`가져오기 끝!\n새로 추가 ${added}건 (${days}일)\n이미 있어서 건너뜀 ${exist}건\n이름 못 찾아 건너뜀 ${skipped}건${failed?`\n저장 실패 ${failed}일`:''}`);
+    };
+  };
+  document.body.appendChild(root);
+  if(!state.properties.length){ alert('숙소 데이터가 아직 없어.'); root.remove(); return; }
+  stepInput();
 }
 async function loadKakaoKey(){
   try{
@@ -2428,6 +2513,9 @@ function levenshteinDistance(a, b){
 }
 function findBestPropertyMatch(line){
   const normLine = normalizeForMatch(line);
+  // 0차: 이름이 정확히 같으면 그걸 우선
+  const exact = state.properties.find(p=>normalizeForMatch(p.name)===normLine);
+  if(exact) return exact;
   // 1차: 포함 관계로 정확히 찾히는 것 우선 (더 짧게 일치하는 쪽이 더 정확한 매칭)
   let best = null;
   state.properties.forEach(p=>{
@@ -2727,6 +2815,7 @@ async function startApp(){
       b.onclick = async ()=>{ if(confirm('로그아웃할까?')){ await cloud.fn.signOut(cloud.auth); location.reload(); } };
       tb.appendChild(b);
     }
+    if(!state._init){ state.tab = 'cal'; state._init = 1; }
     if(!isAdmin() && state.tab !== 'today' && state.tab !== 'cal') state.tab = 'today';
   }
   state.selectedDate = todayStr();
