@@ -175,6 +175,16 @@
   .cchip .fn{display:none;}
   @media(min-width:700px){ .cchip .fn{display:inline;} .cchip .sn{display:none;} }
   .red{color:#c0392b;} .blue{color:#2f5fb5;}
+  .wk-day{background:var(--surface);border:1px solid var(--paper-line);border-radius:10px;padding:12px 14px;margin-bottom:10px;cursor:pointer;}
+  .wk-day.today{outline:2px solid var(--teal);}
+  .wk-day .wd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+  .wk-day .wd b{font-size:20px;}
+  .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
+  .wk-chip{display:flex;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
+  .wk-chip.done{background:var(--teal-soft,#dcebe7);}
+  .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
+  .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
+  .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
   .cal-list-row{background:var(--surface);border:1px solid var(--paper-line);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;}
   .cal-list-row.sel{outline:2px solid var(--teal);}
   .cal-list-row .d{font-weight:700;font-size:14px;margin-bottom:6px;display:flex;justify-content:space-between;}
@@ -492,6 +502,7 @@ let state = {
   calMonth: (()=>{ const d=new Date(); return { year:d.getFullYear(), month:d.getMonth() }; })(),
   calView: 'grid',
   monthRecords: {},
+  calWeekStart: null,
   photos: {}, // {propId:[{id,ts,by,thumb}]} 선택한 날짜 기준
   mapScope: 'today', // 'today' | 'all'
   mapReady: false,
@@ -939,7 +950,8 @@ function ymd(y,m,d){ return y+'-'+pad2(m+1)+'-'+pad2(d); }
 function watchMonth(){
   if(!cloud) return;
   const { year, month } = state.calMonth;
-  const a = 'today:'+ymd(year,month,1), b = 'today:'+ymd(year,month,31);
+  const dkey = dt => ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  const a = 'today:'+dkey(new Date(year, month, 1-7)), b = 'today:'+dkey(new Date(year, month+1, 7));
   if(unsubs.month){ unsubs.month(); unsubs.month = null; }
   state.monthRecords = {};
   const q = cloud.fn.query(cloud.fn.collection(cloud.db,'kv'),
@@ -959,8 +971,8 @@ function watchMonth(){
 }
 function readLocalMonth(){
   const { year, month } = state.calMonth; const m = {};
-  for(let d=1; d<=31; d++){
-    const ds = ymd(year,month,d);
+  for(let d=-6; d<=38; d++){
+    const dt = new Date(year, month, d); const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
     try{ const raw = localStorage.getItem('today:'+ds); if(raw){ const rec = JSON.parse(raw); if(rec && rec.tasks) m[ds] = rec; } }catch(e){}
   }
   return m;
@@ -988,14 +1000,60 @@ function chipsFor(rec){
     return { id, name:p.name, pri: pri.includes(id), done, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
   }).filter(Boolean);
 }
+function weekStartOf(ds){
+  const [y,m,d] = ds.split('-').map(Number); const dt = new Date(y, m-1, d);
+  dt.setDate(dt.getDate() - dt.getDay());
+  return ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+}
+function shiftWeek(delta){
+  const [y,m,d] = (state.calWeekStart || weekStartOf(todayStr())).split('-').map(Number);
+  const dt = new Date(y, m-1, d + delta*7);
+  state.calWeekStart = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  const mid = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()+3);
+  if(mid.getFullYear()!==state.calMonth.year || mid.getMonth()!==state.calMonth.month){
+    state.calMonth = { year:mid.getFullYear(), month:mid.getMonth() }; watchMonth();
+  }
+  render();
+}
+function renderWeekView(){
+  if(!state.calWeekStart) state.calWeekStart = weekStartOf(state.selectedDate || todayStr());
+  const [y,m,d] = state.calWeekStart.split('-').map(Number);
+  const tStr = todayStr();
+  const days = []; for(let i=0;i<7;i++){ const dt = new Date(y, m-1, d+i); days.push({ dt, ds: ymd(dt.getFullYear(), dt.getMonth(), dt.getDate()) }); }
+  const a = days[0].dt, b = days[6].dt;
+  const head = `<div class="cal-head">
+      <button data-cal-wk="-1">◀</button>
+      <div class="ttl">${a.getMonth()+1}/${a.getDate()} ~ ${b.getMonth()+1}/${b.getDate()}</div>
+      <button data-cal-wk="1">▶</button>
+      <button data-cal-wk="today">이번 주</button>
+      <button data-cal-view="grid">달력</button>
+      <button data-cal-view="week" class="on">주간</button>
+      <button data-cal-view="list">목록</button>
+      ${isAdmin()?'<button data-cal-import="1">📥 가져오기</button>':''}
+    </div>`;
+  const body = days.map(({dt,ds})=>{
+    const rec = state.monthRecords[ds];
+    const chips = rec ? chipsFor(rec) : [];
+    const wd = dt.getDay(); const hol = holidayName(ds);
+    const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
+    return `<div class="wk-day ${ds===tStr?'today':''}" data-cal-day="${ds}">
+      <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}<span class="cn">${chips.length?chips.length+'건':''}</span></div>
+      ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:var(--clay);color:#fff;">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
+    </div>`;
+  }).join('');
+  return head + body;
+}
 function renderCalendarTab(){
   if(!cloud) state.monthRecords = readLocalMonth();
+  if(state.calView === 'week') return renderWeekView();
   const { year, month } = state.calMonth;
   const first = new Date(year, month, 1).getDay();
   const days = new Date(year, month+1, 0).getDate();
   const tStr = todayStr();
   let total = 0;
-  Object.values(state.monthRecords).forEach(r=>{ total += (r.propertyIds||[]).length; });
+  const mPrefix = year+'-'+pad2(month+1)+'-';
+  const mKeys = Object.keys(state.monthRecords).filter(k=>k.startsWith(mPrefix));
+  mKeys.forEach(k=>{ total += (state.monthRecords[k].propertyIds||[]).length; });
   const head = `
     <div class="cal-head">
       <button data-cal-nav="-1">◀</button>
@@ -1003,10 +1061,11 @@ function renderCalendarTab(){
       <button data-cal-nav="1">▶</button>
       <button data-cal-today="1">오늘</button>
       <button data-cal-view="grid" class="${state.calView==='grid'?'on':''}">달력</button>
+      <button data-cal-view="week" class="${state.calView==='week'?'on':''}">주간</button>
       <button data-cal-view="list" class="${state.calView==='list'?'on':''}">목록</button>
       ${isAdmin()?'<button data-cal-import="1">📥 가져오기</button>':''}
     </div>
-    <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 10px;">이 달 일정 ${Object.keys(state.monthRecords).length}일 · 총 ${total}건 · 날짜를 누르면 그날 일정으로 이동</div>`;
+    <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 10px;">이 달 일정 ${mKeys.length}일 · 총 ${total}건 · 날짜를 누르면 그날 일정으로 이동</div>`;
   if(state.calView === 'list'){
     const rows = [];
     for(let d=1; d<=days; d++){
@@ -1049,6 +1108,11 @@ function attachCalHandlers(){
   document.querySelectorAll('[data-cal-view]').forEach(b=> b.onclick = ()=>{ state.calView = b.dataset.calView; try{ localStorage.setItem('pref:calView', state.calView); }catch(e){} render(); });
   document.querySelectorAll('[data-cal-day]').forEach(el=> el.onclick = async ()=>{ state.tab = 'today'; await selectScheduleDate(el.dataset.calDay); window.scrollTo(0,0); });
   document.querySelectorAll('[data-cal-import]').forEach(b=> b.onclick = openImportSheet);
+  document.querySelectorAll('[data-cal-wk]').forEach(b=> b.onclick = ()=>{
+    const v = b.dataset.calWk;
+    if(v==='today'){ state.calWeekStart = weekStartOf(todayStr()); const d=new Date(); if(d.getMonth()!==state.calMonth.month||d.getFullYear()!==state.calMonth.year){ state.calMonth={year:d.getFullYear(),month:d.getMonth()}; watchMonth(); } render(); }
+    else shiftWeek(Number(v));
+  });
 }
 
 
