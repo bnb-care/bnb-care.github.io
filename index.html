@@ -1051,6 +1051,40 @@ function attachCalHandlers(){
   document.querySelectorAll('[data-cal-import]').forEach(b=> b.onclick = openImportSheet);
 }
 
+
+async function moveProperty(id){
+  const p = propById(id); const rec = state.todayRecord;
+  if(!p || !rec) return;
+  const v = prompt(p.name+' 일정을 어느 날짜로 옮길까? (예: 10/15)');
+  if(!v) return;
+  const m = v.match(/(\d{1,2})\s*[\/\-.월]\s*(\d{1,2})/);
+  if(!m){ alert('날짜를 "10/15" 형식으로 입력해줘.'); return; }
+  const yy = Number(state.selectedDate.slice(0,4));
+  const ds = yy+'-'+pad2(Number(m[1]))+'-'+pad2(Number(m[2]));
+  if(ds === state.selectedDate){ alert('같은 날짜야.'); return; }
+  let tgt = null;
+  try{ const x = await window.storage.get('today:'+ds, false); if(x && x.value) tgt = JSON.parse(x.value); }catch(e){}
+  if(!tgt) tgt = { propertyIds:[], tasks:{}, priorityIds:[], excludedIds:[] };
+  tgt.propertyIds = tgt.propertyIds||[]; tgt.tasks = tgt.tasks||{}; tgt.priorityIds = tgt.priorityIds||[]; tgt.excludedIds = tgt.excludedIds||[];
+  if(tgt.propertyIds.includes(id)){ alert('그 날짜에 이미 있어.'); return; }
+  if(!confirm(p.name+' 일정을 '+Number(m[1])+'/'+Number(m[2])+'로 옮길까?')) return;
+  tgt.propertyIds.push(id);
+  tgt.tasks[id] = (rec.tasks||{})[id] || tasksForProperty(p).map(text=>({text, done:false}));
+  if((rec.priorityIds||[]).includes(id) && !tgt.priorityIds.includes(id)) tgt.priorityIds.push(id);
+  if((rec.assign||{})[id]){ tgt.assign = tgt.assign||{}; tgt.assign[id] = rec.assign[id]; }
+  if((rec.dayNotes||{})[id]){ tgt.dayNotes = tgt.dayNotes||{}; tgt.dayNotes[id] = rec.dayNotes[id]; }
+  try{ await window.storage.set('today:'+ds, JSON.stringify(tgt), false); }catch(e){ alert('저장에 실패했어.'); return; }
+  // 저장 직후 실시간 반영으로 state.todayRecord가 새 객체로 바뀔 수 있어서 다시 가져옴
+  const cur = state.todayRecord || rec;
+  cur.propertyIds = (cur.propertyIds||[]).filter(x=>x!==id);
+  if(cur.tasks) delete cur.tasks[id];
+  cur.priorityIds = (cur.priorityIds||[]).filter(x=>x!==id);
+  if(cur.assign) delete cur.assign[id];
+  if(cur.dayNotes) delete cur.dayNotes[id];
+  state.todayRecord = cur;
+  await saveTodayRecord();
+  render();
+}
 function parseScheduleText(text, defYear){
   const out = {};
   String(text||'').split(/\r?\n/).forEach(line=>{
@@ -1065,6 +1099,24 @@ function parseScheduleText(text, defYear){
   });
   return out;
 }
+
+function parseKakaoSchedule(text, defYear){
+  const out = []; const seen = new Set();
+  const nowM = new Date().getMonth()+1;
+  String(text||'').split(/\r?\n/).forEach(line=>{
+    const m = line.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:\([^)]*\))?\s*(.*)$/);
+    if(!m) return;
+    const mo = Number(m[1]), d = Number(m[2]); let yy = defYear;
+    if(mo < nowM - 6) yy = defYear + 1;
+    const ds = yy+'-'+pad2(mo)+'-'+pad2(d);
+    if(seen.has(ds)) return; seen.add(ds);
+    const rest = m[3] || '';
+    const g = rest.match(/(\d{1,2})\s*[~∼～\-]\s*(\d{1,2})/);
+    const n = rest.match(/(\d+)\s*명/);
+    out.push({ ds, gap: g ? g[1]+'~'+g[2] : '', guests: n ? Number(n[1]) : 0, today: /[■□◼◻▪]|당일/.test(rest) });
+  });
+  return out;
+}
 function openImportSheet(){
   const old = document.getElementById('overlayImp'); if(old) old.remove();
   const root = document.createElement('div');
@@ -1073,14 +1125,72 @@ function openImportSheet(){
   const stepInput = ()=>{
     root.innerHTML = `<div class="sheet">
       <h2>📥 일정 가져오기</h2>
+      <button class="save-btn" id="imp_kakao" style="width:100%;margin-bottom:10px;">💬 카톡 일정표 붙여넣기 (숙소 1곳)</button>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">또는 아래에 날짜별 목록을 붙여넣기</div>
       <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">한 줄에 한 날짜씩 붙여넣어줘. 예) 10/3: 홍대102호, 창천동잇다303호<br>이미 등록된 일정은 지워지지 않고, 없는 숙소만 추가돼.</div>
       <textarea id="imp_text" style="width:100%;height:220px;font-size:13px;" placeholder="10/2: 동교스테이C, 엘지팰리스1208호&#10;10/3: 홍대102호, 서교동복층"></textarea>
       <div class="sheet-actions"><button class="cancel-btn" id="imp_cancel">취소</button><button class="save-btn" id="imp_next">다음 (미리보기)</button></div></div>`;
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
+    document.getElementById('imp_kakao').onclick = stepKakao;
     document.getElementById('imp_next').onclick = ()=>{
       const data = parseScheduleText(document.getElementById('imp_text').value, y);
       if(!Object.keys(data).length){ alert('날짜 형식(예: 10/3: 숙소, 숙소)으로 된 줄이 없어.'); return; }
       stepMap(data);
+    };
+  };
+
+  const stepKakao = ()=>{
+    const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
+      <h2>💬 카톡 일정표</h2>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">카톡방(숙소)을 고르고, 담당자가 보낸 일정표 문자를 그대로 붙여넣어줘.<br>날짜 줄만 읽고, 주소·비밀번호 같은 내용은 읽지도 저장하지도 않아.</div>
+      <div class="field"><label>숙소 (카톡방 이름)</label><select id="kk_prop"><option value="">숙소 선택</option>${props.map(pp=>`<option value="${esc(pp.id)}">${esc(pp.name)}</option>`).join('')}</select></div>
+      <textarea id="kk_text" style="width:100%;height:200px;font-size:13px;" placeholder="- 10월 5일(월) 29~5, 4명 체크인 ■당일&#10;- 10월 7일(수) 5~7, 3명 체크인"></textarea>
+      <div class="sheet-actions"><button class="cancel-btn" id="kk_back">뒤로</button><button class="save-btn" id="kk_next">다음 (미리보기)</button></div></div>`;
+    document.getElementById('kk_back').onclick = stepInput;
+    document.getElementById('kk_next').onclick = ()=>{
+      const pid = document.getElementById('kk_prop').value;
+      if(!pid){ alert('숙소를 먼저 골라줘.'); return; }
+      const rows = parseKakaoSchedule(document.getElementById('kk_text').value, y);
+      if(!rows.length){ alert('"10월 5일(월) ..." 형식의 날짜 줄을 못 찾았어.'); return; }
+      stepKakaoPreview(pid, rows);
+    };
+  };
+  const stepKakaoPreview = async (pid, rows)=>{
+    const pr = propById(pid);
+    const exists = {};
+    for(const r of rows){ try{ const x = await window.storage.get('today:'+r.ds, false); if(x && x.value){ const rec = JSON.parse(x.value); exists[r.ds] = (rec.propertyIds||[]).includes(pid); } }catch(e){} }
+    root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
+      <h2>${esc(pr.name)} 일정 확인</h2>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">체크한 날짜만 등록돼. 이미 등록된 날짜는 건너뛰어.</div>
+      ${rows.map((r,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;">
+        <input type="checkbox" data-kk-row="${i}" ${exists[r.ds]?'disabled':'checked'} style="margin-top:3px;">
+        <span><b>${Number(r.ds.slice(5,7))}/${Number(r.ds.slice(8))}</b>${r.guests?` · ${r.guests}명 체크인`:''}${r.gap?` · 비는 기간 ${esc(r.gap)}`:''}${r.today?' · <b style="color:var(--clay)">당일</b>':''}${exists[r.ds]?' · <span style="color:var(--ink-soft)">이미 있음</span>':''}</span></label>`).join('')}
+      <div class="sheet-actions"><button class="cancel-btn" id="kp_back">뒤로</button><button class="save-btn" id="kp_go">등록</button></div></div>`;
+    document.getElementById('kp_back').onclick = stepKakao;
+    document.getElementById('kp_go').onclick = async ()=>{
+      const btn = document.getElementById('kp_go'); btn.disabled = true; btn.textContent = '저장 중…';
+      let added = 0, failed = 0;
+      for(const el of root.querySelectorAll('[data-kk-row]')){
+        if(!el.checked) continue;
+        const r = rows[Number(el.dataset.kkRow)];
+        let rec = null;
+        try{ const x = await window.storage.get('today:'+r.ds, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){}
+        if(!rec) rec = { propertyIds:[], tasks:{}, priorityIds:[], excludedIds:[] };
+        rec.propertyIds = rec.propertyIds||[]; rec.tasks = rec.tasks||{}; rec.priorityIds = rec.priorityIds||[]; rec.excludedIds = rec.excludedIds||[];
+        if(rec.propertyIds.includes(pid)) continue;
+        rec.propertyIds.push(pid);
+        rec.tasks[pid] = tasksForProperty(pr).map(text=>({text, done:false}));
+        if((r.today || pr.alwaysPriority) && !rec.priorityIds.includes(pid)) rec.priorityIds.push(pid);
+        rec.excludedIds = rec.excludedIds.filter(x=>x.id!==pid);
+        const note = [r.guests?`${r.guests}명 체크인`:'', r.gap?`비는 기간 ${r.gap}`:''].filter(Boolean).join(' · ');
+        if(note){ rec.dayNotes = rec.dayNotes||{}; if(!rec.dayNotes[pid]) rec.dayNotes[pid] = note; }
+        try{ await window.storage.set('today:'+r.ds, JSON.stringify(rec), false); added++; }catch(err){ failed++; }
+      }
+      root.remove();
+      if(state.selectedDate) await loadTodayRecord();
+      render();
+      alert(`${pr.name} ${added}일 등록했어.${failed?`\n저장 실패 ${failed}일`:''}`);
     };
   };
   const stepMap = (data)=>{
@@ -1744,6 +1854,7 @@ function renderScheduleCards(){
           </div>
           <div class="job-row" style="margin-top:8px;${isAdmin()?'':'display:none;'}">
             <button class="priority-toggle ${isPriority?'active':''}" data-toggle-priority="${id}">🔴 당일체크인${isPriority?' 해제':''}</button>
+            <button class="priority-toggle" data-move-date="${id}" style="margin-left:6px;">📅 날짜 이동</button>
           </div>
           <div class="assign-row">
             <span class="pw-icon">👤</span>
@@ -2270,6 +2381,7 @@ function attachHandlers(){
   document.querySelectorAll('[data-toggle-priority]').forEach(el=>{
     el.onclick = ()=> togglePriority(el.dataset.togglePriority);
   });
+  document.querySelectorAll('[data-move-date]').forEach(el=>{ el.onclick = ()=> moveProperty(el.dataset.moveDate); });
   const confirmBtn = document.getElementById('confirmPick');
   if(confirmBtn) confirmBtn.onclick = createTodayList;
   const laundryReportBtn = document.getElementById('laundryReportBtn');
@@ -2511,11 +2623,22 @@ function levenshteinDistance(a, b){
   }
   return dp[a.length][b.length];
 }
+function nameKey(s){
+  return (s||'').toLowerCase().replace(/\s+/g,'')
+    .replace(/lg/g,'엘지').replace(/팰리스/g,'').replace(/호/g,'')
+    .replace(/투룸/g,'2룸').replace(/원룸/g,'1룸').replace(/북측/g,'복층')
+    .replace(/동(?=\d)/g,'').replace(/25길9(?=\d)/g,'25길')
+    .replace(/2룸(?=\d{3})/g,'');
+}
 function findBestPropertyMatch(line){
   const normLine = normalizeForMatch(line);
   // 0차: 이름이 정확히 같으면 그걸 우선
   const exact = state.properties.find(p=>normalizeForMatch(p.name)===normLine);
   if(exact) return exact;
+  // 0.5차: 표기만 다른 같은 이름(LG/엘지, 투룸/2룸 등) 정리해서 비교
+  const keyLine = nameKey(line);
+  const keyHit = state.properties.filter(p=>nameKey(p.name)===keyLine);
+  if(keyHit.length===1) return keyHit[0];
   // 1차: 포함 관계로 정확히 찾히는 것 우선 (더 짧게 일치하는 쪽이 더 정확한 매칭)
   let best = null;
   state.properties.forEach(p=>{
