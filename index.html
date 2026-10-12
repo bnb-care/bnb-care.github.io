@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>숙소 관리 수첩</title>
+<title>bnb care</title>
+<meta name="apple-mobile-web-app-title" content="bnb care">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
   body.not-admin [data-tab="staff"], body.not-admin [data-tab="all"]{display:none;}
   body.company [data-tab="map"]{display:none;}
@@ -367,7 +369,7 @@
 <body>
 
 <div class="topbar">
-  <h1>숙소 관리 수첩</h1>
+  <h1>bnb care</h1>
   <div class="tabs">
     <button class="tab" data-tab="today">일정</button>
     <button class="tab" data-tab="cal">달력</button>
@@ -2682,8 +2684,8 @@ function showLogin(msg){
   el.className = 'login-wrap'; el.id = 'loginWrap';
   el.innerHTML = `
     <div class="login-box">
-      <h2>숙소 관리 수첩</h2>
-      <div style="font-size:13px;color:var(--ink-soft,#777);">BNB CARE 직원 전용</div>
+      <h2>bnb care</h2>
+      <div style="font-size:13px;color:var(--ink-soft,#777);">직원 전용</div>
       <input id="lg_id" type="text" inputmode="email" autocapitalize="off" autocomplete="username" placeholder="아이디 (또는 이메일)">
       <input id="lg_pw" type="password" autocomplete="current-password" placeholder="비밀번호">
       <div class="login-err" id="lg_err">${esc(msg||'')}</div>
@@ -2716,8 +2718,8 @@ async function startApp(){
   document.body.classList.toggle('not-admin', !isAdmin());
   document.body.classList.toggle('company', COMPANY_MODE);
   if(COMPANY_MODE){
-    document.title = 'BNB CARE 업무';
-    const h1 = document.querySelector('.topbar h1'); if(h1) h1.textContent = 'BNB CARE 업무';
+    document.title = 'bnb care';
+    const h1 = document.querySelector('.topbar h1'); if(h1) h1.textContent = 'bnb care';
     const tb = document.querySelector('.topbar'); if(tb && !document.getElementById('topUser') && cloud && cloud.user){
       tb.style.position = 'relative';
       const b = document.createElement('button'); b.id = 'topUser'; b.className = 'top-user';
