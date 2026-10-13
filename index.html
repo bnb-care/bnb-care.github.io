@@ -1412,6 +1412,19 @@ async function cleanupAddressSpacing(){
 }
 
 function unitFromAddr(a){ const t = String(a||''); const b = t.match(/([A-Za-z])\s*동\s*(\d{3,4})\s*호/); if(b) return b[1].toUpperCase()+b[2]; const ms = [...t.matchAll(/(\d{3,4})\s*호/g)]; return ms.length ? ms[ms.length-1][1] : ''; }
+// 대표별 색 (원본 엑셀의 색을 그대로 옮김: bg=엑셀색, bar=같은 색을 진하게)
+const OWNER_COLORS = {
+  '구정택': {bg:'#FCE4D6', bar:'#F4B183'},
+  '이수현': {bg:'#DDEBF7', bar:'#9DC3E6'},
+  '김현진': {bg:'#F2CEEF', bar:'#E08AD6'},
+  '이미선': {bg:'#E2EFDA', bar:'#A9D18E'},
+  '조기환': {bg:'#C6E0B4', bar:'#70AD47'},
+};
+function ownerStyle(p, tint){
+  const c = p && OWNER_COLORS[String(p.owner||'').trim()];
+  if(!c) return '';
+  return `border-left:8px solid ${c.bar};` + (tint ? `background:${c.bg};` : '');
+}
 function suggestPropName(old, all, addr){
   if(/^창천/.test(String(old||'').trim()) && addr && unitFromAddr(addr)) { const rm = /투룸/.test(old) ? '2룸' : ((String(old).match(/([123])\s*룸/)||[])[1] ? String(old).match(/([123])\s*룸/)[1]+'룸' : '2룸'); return ((/잇다/.test(old) || /신촌로\s*3나?길\s*8-10/.test(addr)) ? '창천잇다 ' : '창천 ')+rm+' '+unitFromAddr(addr); }
   let r = suggestPropName0(old, all).replace(/(\d)호(?=\s|$)/g,'$1');
@@ -1483,19 +1496,19 @@ function openRenameSheet(){
 }
 
 const ROOM_PRESET = [
-  {room:'용강동2룸', re:/^용강/},
-  {room:'제니하우스', re:/^제니하우스/},
-  {room:'준삐삐하우스', re:/^준삐삐/},
-  {room:'동교스테이', re:/^동교스테이/},
-  {room:'연남동3룸', re:/^연남/},
+  {room:'용강동2룸 101', re:/^용강/},
+  {room:'제니하우스 201', re:/^제니하우스/},
+  {room:'준삐삐하우스 401', re:/^준삐삐/},
+  {room:'동교스테이 A·B·C·D', re:/^동교스테이/},
+  {room:'연남동3룸 3층', re:/^연남/},
   {room:'서교동복층', re:/^서교/},
-  {room:'오송아트빌', re:/^오송아트빌/},
+  {room:'오송아트빌 B201', re:/^오송아트빌/},
   {room:'파라다이스텔·LG 729·1520', re:/^(파라다이스텔|LG팰리스\s*(729|1520))/},
   {room:'와우산로·LG 1208·1408·1412', re:/^(LG팰리스\s*(1408|1412|1208)|와우산로)/},
   {room:'창천동잇다', re:/^창천잇다/},
-  {room:'망원동2룸', re:/^망원\s*2룸/},
-  {room:'망원동3룸', re:/^망원\s*3룸/},
-  {room:'동교로', re:/^동교로/},
+  {room:'망원동2룸 201', re:/^망원\s*2룸/},
+  {room:'망원동3룸 1층·2층', re:/^망원\s*3룸/},
+  {room:'동교로 101·102·301', re:/^동교로/},
 ];
 function openRoomSheet(){
   const rows = ROOM_PRESET.map(r=>({ room:r.room, ids: state.properties.filter(p=>r.re.test(p.name)).map(p=>p.id) }));
@@ -2057,7 +2070,7 @@ function renderScheduleCards(){
       </div>
     ` : '';
     return `
-      <div class="job-card ${isDone?'done':''} ${isPriority && !isDone ?'priority':''} ${state.openJobIds.has(id)?'open':''}">
+      <div class="job-card ${isDone?'done':''} ${isPriority && !isDone ?'priority':''} ${state.openJobIds.has(id)?'open':''}" style="${ownerStyle(p,false)}">
         <div class="job-head" data-toggle-job="${id}">
           <div class="order-cluster">
             ${isAdmin() ? `<div class="order-controls-mini">
@@ -2166,7 +2179,7 @@ function renderAll(){
   const cards = list.map(p=>{
     const open = state.openIds.has(p.id);
     return `
-    <div class="prop-card ${open?'open':''}">
+    <div class="prop-card ${open?'open':''}" style="${ownerStyle(p,true)}">
       <div class="prop-top" data-toggle="${p.id}">
         <div>
           <div class="prop-name">${esc(p.name)}</div>
