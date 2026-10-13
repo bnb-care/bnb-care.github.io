@@ -1418,10 +1418,15 @@ const OWNER_COLORS = {
   '이수현': {bg:'#DDEBF7', bar:'#9DC3E6'},
   '김현진': {bg:'#F2CEEF', bar:'#E08AD6'},
   '이미선': {bg:'#E2EFDA', bar:'#A9D18E'},
-  '조기환': {bg:'#C6E0B4', bar:'#70AD47'},
+  '조기환': {bg:'#FFF2CC', bar:'#FFD966'},  // 동교스테이 (이미선 연두와 구분되게 노랑)
+};
+// 대표가 비어 있는 숙소는 전화번호로 색 지정
+const PHONE_COLORS = {
+  '01091409067': {bg:'#E4DCF4', bar:'#9B86D6'},  // 창천동 잇다
 };
 function ownerStyle(p, tint){
-  const c = p && OWNER_COLORS[String(p.owner||'').trim()];
+  let c = p && OWNER_COLORS[String(p.owner||'').trim()];
+  if(!c && p && !String(p.owner||'').trim()) c = PHONE_COLORS[String(p.phone||'').replace(/\D/g,'')];
   if(!c) return '';
   return `border-left:8px solid ${c.bar};` + (tint ? `background:${c.bg};` : '');
 }
