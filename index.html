@@ -758,7 +758,7 @@ function openNoticeSheet(){
   document.body.appendChild(root);
   draw();
 }
-function buildPersonalText(st, withPw, withAddr){
+function buildPersonalText(st, withPw, withAddr, greet){
   if(withAddr===undefined) withAddr = true;
   const r = state.todayRecord;
   const ids = staffAssignedProps(st.id);
@@ -775,12 +775,13 @@ function buildPersonalText(st, withPw, withAddr){
     if(withAddr && p.address) lines.push(`📍 ${p.address}`);
     if(note) lines.push(`📝 ${note}`);
   });
+  if(greet){ lines.push(''); lines.push(greet); }
   return lines.join('\n');
 }
 function openPersonalSheet(stId){
   const st = staffById(stId); if(!st) return;
-  let withPw = true, withAddr = true;
-  try{ withPw = localStorage.getItem('pref:msgPw')!=='0'; withAddr = localStorage.getItem('pref:msgAddr')!=='0'; }catch(e){}
+  let withPw = true, withAddr = true, withGreet = true, greetTxt = '잘 부탁드립니다 :)';
+  try{ withPw = localStorage.getItem('pref:msgPw')!=='0'; withAddr = localStorage.getItem('pref:msgAddr')!=='0'; withGreet = localStorage.getItem('pref:msgGreetOn')!=='0'; const g = localStorage.getItem('pref:msgGreet'); if(g!==null) greetTxt = g; }catch(e){}
   const root = document.createElement('div');
   root.className='overlay'; root.id='overlay';
   root.innerHTML = `
@@ -788,6 +789,8 @@ function openPersonalSheet(stId){
       <h2>✉️ ${esc(st.name)}님께 보내기</h2>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="pm_pw" ${withPw?'checked':''}>도어락 비밀번호 포함</label>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="pm_addr" ${withAddr?'checked':''}>주소 포함</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="pm_greet_on" ${withGreet?'checked':''}>끝인사 포함</label>
+      <input id="pm_greet" type="text" value="${esc(greetTxt)}" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--line,#ddd);border-radius:8px;font-size:14px;box-sizing:border-box;">
       <textarea id="pm_text" class="day-note" style="min-height:220px;"></textarea>
       <div class="sheet-actions" style="flex-wrap:wrap;">
         <button class="cancel-btn" id="pm_close">닫기</button>
@@ -797,10 +800,12 @@ function openPersonalSheet(stId){
     </div>`;
   document.body.appendChild(root);
   const ta = document.getElementById('pm_text');
-  const refresh = ()=>{ ta.value = buildPersonalText(st, document.getElementById('pm_pw').checked, document.getElementById('pm_addr').checked); };
+  const refresh = ()=>{ ta.value = buildPersonalText(st, document.getElementById('pm_pw').checked, document.getElementById('pm_addr').checked, document.getElementById('pm_greet_on').checked ? document.getElementById('pm_greet').value.trim() : ''); };
   refresh();
   document.getElementById('pm_pw').onchange = (e)=>{ try{ localStorage.setItem('pref:msgPw', e.target.checked?'1':'0'); }catch(_){} refresh(); };
   document.getElementById('pm_addr').onchange = (e)=>{ try{ localStorage.setItem('pref:msgAddr', e.target.checked?'1':'0'); }catch(_){} refresh(); };
+  document.getElementById('pm_greet_on').onchange = (e)=>{ try{ localStorage.setItem('pref:msgGreetOn', e.target.checked?'1':'0'); }catch(_){} refresh(); };
+  document.getElementById('pm_greet').oninput = (e)=>{ try{ localStorage.setItem('pref:msgGreet', e.target.value); }catch(_){} refresh(); };
   document.getElementById('pm_close').onclick = ()=> root.remove();
   const sms = document.getElementById('pm_sms');
   if(sms) sms.onclick = ()=>{ markSent(st.id); render(); location.href = smsHref(st.phone, ta.value); };
