@@ -520,7 +520,7 @@ const DEFAULT_PROPERTIES = []; // 숙소 데이터는 서버(Firebase)에서 불
 async function loadProperties(){
   try{
     const res = await window.storage.get(KEY_PROPS, false);
-    if(res && res.value){ state.properties = JSON.parse(res.value); return; }
+    if(res && res.value){ state.properties = cleanProps(JSON.parse(res.value)); return; }
   }catch(e){}
   state.properties = DEFAULT_PROPERTIES;
 }
@@ -1388,6 +1388,8 @@ async function saveCompanyLocation(){
     }
   }catch(e){}
 }
+function cleanAddr(a){ return typeof a==='string' ? a.replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').trim() : a; }
+function cleanProps(list){ return Array.isArray(list) ? list.map(p=> (p && typeof p.address==='string' && p.address.includes('](')) ? Object.assign({}, p, {address: cleanAddr(p.address)}) : p) : list; }
 function normalizeAddressSpacing(address){
   if(!address) return address;
   // "로" 뒤에 바로 건물번호 숫자가 오면 띄어씀. 단 "OO로25길"처럼 로 다음이 길로 이어지는
@@ -1407,6 +1409,77 @@ async function cleanupAddressSpacing(){
   await saveProperties();
   render();
   alert(changed > 0 ? `${changed}곳 주소 띄어쓰기를 정리했어.` : '이미 다 정리돼 있어서 바뀐 게 없어.');
+}
+
+function unitFromAddr(a){ const t = String(a||''); const b = t.match(/([A-Za-z])\s*동\s*(\d{3,4})\s*호/); if(b) return b[1].toUpperCase()+b[2]; const ms = [...t.matchAll(/(\d{3,4})\s*호/g)]; return ms.length ? ms[ms.length-1][1] : ''; }
+function suggestPropName(old, all, addr){
+  if(/^창천/.test(String(old||'').trim()) && addr && unitFromAddr(addr)) { const rm = /투룸/.test(old) ? '2룸' : ((String(old).match(/([123])\s*룸/)||[])[1] ? String(old).match(/([123])\s*룸/)[1]+'룸' : '2룸'); return ((/잇다/.test(old) || /신촌로\s*3나?길\s*8-10/.test(addr)) ? '창천잇다 ' : '창천 ')+rm+' '+unitFromAddr(addr); }
+  let r = suggestPropName0(old, all).replace(/(\d)호(?=\s|$)/g,'$1');
+  if(addr && !/\d{3,}/.test(r) && !/\d층$/.test(r) && !/\s[A-D]$/.test(r)){ const u = unitFromAddr(addr); if(u) r += ' '+u; }
+  return r;
+}
+function suggestPropName0(old, all){
+  let n = String(old||'').trim().replace(/\s+/g,' ');
+  let m;
+  if((m = n.match(/^(?:LG|엘지)\s*팰리스\s*(\d{3,4})호?$/i))) return `LG팰리스 ${m[1]}호`;
+  if((m = n.match(/^파라다이스텔\s*(\d{3,4})호?$/))) return `파라다이스텔 ${m[1]}호`;
+  if((m = n.match(/^동교스테이\s*([A-Da-d])$/))) return `동교스테이 ${m[1].toUpperCase()}`;
+  if((m = n.match(/^창천동?\s*잇다\s*(\d룸)\s*(\d{3}호)?$/))) return `창천잇다 ${m[1]}${m[2]?' '+m[2]:''}`;
+  if((m = n.match(/^홍대\s*(\d{3})호?$/))) return `홍대 ${m[1]}호`;
+  if((m = n.match(/^와우산로\s*(\d+)$/))) return `와우산로 ${m[1]}`;
+  n = n.replace(/투룸/g,'2룸').replace(/원룸/g,'1룸').replace(/북측/g,'복층');
+  if((m = n.match(/^(망원|연남|용강|서교|창천|이대|합정|상수|연희)동?\s*([123]룸|복층)(\s*\d층)?$/))) n = `${m[1]} ${m[2]}${m[3]?' '+m[3].trim():''}`;
+  if(n==='망원 3룸' && all.some(x=>/^망원동?\s*3룸\s*2층$/.test(x.name))) n = '망원 3룸 1층';
+  return n;
+}
+function openRenameSheet(){
+  const rows = state.properties.map(p=>({id:p.id, old:p.name, nu:suggestPropName(p.name, state.properties, p.address)}));
+  const root = document.createElement('div');
+  root.className='overlay'; root.id='overlay';
+  const draw = ()=>{
+    const names = rows.map(r=>r.nu.trim());
+    const dup = new Set(names.filter((n,i)=> n && names.indexOf(n)!==i));
+    const changed = rows.filter(r=>r.nu.trim() && r.nu.trim()!==r.old).length;
+    root.querySelector('#rn_list').innerHTML = rows.map((r,i)=>{
+      const ch = r.nu.trim()!==r.old;
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--line,#eee);">
+        <div style="font-size:12px;color:var(--ink-soft);">${esc(r.old)}${ch?' →':' (그대로)'}</div>
+        <input data-rn="${i}" value="${esc(r.nu)}" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid ${dup.has(r.nu.trim())?'var(--clay,#c33)':'var(--line,#ddd)'};border-radius:8px;font-size:15px;${ch?'font-weight:700;':''}">
+        ${dup.has(r.nu.trim())?'<div style="font-size:11px;color:var(--clay,#c33);">이름이 겹쳐. 다르게 해줘.</div>':''}
+      </div>`;
+    }).join('');
+    root.querySelector('#rn_apply').textContent = changed ? `${changed}곳 이름 바꾸기` : '바꿀 게 없어';
+    root.querySelector('#rn_apply').disabled = !changed || dup.size>0;
+    root.querySelectorAll('[data-rn]').forEach(inp=> inp.oninput = ()=>{
+      rows[Number(inp.dataset.rn)].nu = inp.value;
+      const pos = inp.selectionStart; const idx = inp.dataset.rn;
+      draw();
+      const again = root.querySelector(`[data-rn="${idx}"]`); if(again){ again.focus(); try{ again.setSelectionRange(pos,pos); }catch(_){} }
+    });
+  };
+  root.innerHTML = `<div class="sheet">
+    <h2>숙소 이름 한번에 정리</h2>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">제안한 이름이 칸에 채워져 있어. 마음에 안 드는 건 직접 고쳐. 바뀐 이름은 굵게 보여. 옛 이름은 별칭으로 남겨서 일정 가져오기에서도 계속 찾아져.</div>
+    <div id="rn_list" style="max-height:52vh;overflow-y:auto;"></div>
+    <div class="sheet-actions"><button class="cancel-btn" id="rn_close">닫기</button><button class="save-btn" id="rn_apply">바꾸기</button></div>
+  </div>`;
+  document.body.appendChild(root);
+  draw();
+  root.querySelector('#rn_close').onclick = ()=> root.remove();
+  root.querySelector('#rn_apply').onclick = async ()=>{
+    const todo = rows.filter(r=>r.nu.trim() && r.nu.trim()!==r.old);
+    if(!todo.length) return;
+    if(!confirm(`${todo.length}곳 이름을 바꿀까?`)) return;
+    const map = new Map(todo.map(r=>[r.id, r.nu.trim()]));
+    state.properties = state.properties.map(p=>{
+      if(!map.has(p.id)) return p;
+      const al = Array.from(new Set([p.name, ...(p.aliases||[])])).filter(x=>x && x!==map.get(p.id));
+      return { ...p, name: map.get(p.id), aliases: al };
+    });
+    await saveProperties();
+    root.remove(); render();
+    alert(`${todo.length}곳 이름을 바꿨어.`);
+  };
 }
 
 function openBulkParkingSheet(){
@@ -2087,6 +2160,7 @@ function renderAll(){
       ${state.toolsOpen ? `
         <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
           ${isAdmin() ? `<button class="pill-btn" id="bulkParkingBtn">🚗 여러 업체에 주차등록 정보 한번에 적용</button>
+          <button class="pill-btn" id="renamePropsBtn">✏️ 숙소 이름 한번에 정리</button>
           <button class="pill-btn" id="cleanupAddressBtn">🧹 주소 띄어쓰기 한번에 정리</button>
           ${CLOUD_ENABLED ? `<button class="pill-btn" id="cleanupPhotosBtn">🗑️ 30일 지난 사진 정리</button>
           <button class="pill-btn" id="uploadLocalBtn">☁️ 이 폰의 데이터를 서버로 올리기</button>` : ''}` : ''}
@@ -2636,6 +2710,8 @@ function attachHandlers(){
   });
   const bulkParkingBtn = document.getElementById('bulkParkingBtn');
   if(bulkParkingBtn) bulkParkingBtn.onclick = openBulkParkingSheet;
+  const renamePropsBtn = document.getElementById('renamePropsBtn');
+  if(renamePropsBtn) renamePropsBtn.onclick = openRenameSheet;
   const cleanupAddressBtn = document.getElementById('cleanupAddressBtn');
   if(cleanupAddressBtn) cleanupAddressBtn.onclick = cleanupAddressSpacing;
   const toggleToolsBtn = document.getElementById('toggleTools');
@@ -2744,11 +2820,11 @@ function nameKey(s){
 function findBestPropertyMatch(line){
   const normLine = normalizeForMatch(line);
   // 0차: 이름이 정확히 같으면 그걸 우선
-  const exact = state.properties.find(p=>normalizeForMatch(p.name)===normLine);
+  const exact = state.properties.find(p=>normalizeForMatch(p.name)===normLine) || state.properties.find(p=>(p.aliases||[]).some(a=>normalizeForMatch(a)===normLine));
   if(exact) return exact;
   // 0.5차: 표기만 다른 같은 이름(LG/엘지, 투룸/2룸 등) 정리해서 비교
   const keyLine = nameKey(line);
-  const keyHit = state.properties.filter(p=>nameKey(p.name)===keyLine);
+  const keyHit = state.properties.filter(p=>nameKey(p.name)===keyLine || (p.aliases||[]).some(a=>nameKey(a)===keyLine));
   if(keyHit.length===1) return keyHit[0];
   // 1차: 포함 관계로 정확히 찾히는 것 우선 (더 짧게 일치하는 쪽이 더 정확한 매칭)
   let best = null;
@@ -2970,7 +3046,7 @@ let lastPropsRaw = null, lastStaffRaw = null;
 function watchShared(){
   watchKey('props', KEY_PROPS, v=>{
     if(v === lastPropsRaw) return; lastPropsRaw = v;
-    try{ state.properties = v ? JSON.parse(v) : []; }catch(e){}
+    try{ state.properties = v ? cleanProps(JSON.parse(v)) : []; }catch(e){}
     safeRender();
   });
   watchKey('staff', 'staff:list', v=>{
