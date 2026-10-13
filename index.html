@@ -1415,7 +1415,7 @@ function unitFromAddr(a){ const t = String(a||''); const b = t.match(/([A-Za-z])
 function suggestPropName(old, all, addr){
   if(/^창천/.test(String(old||'').trim()) && addr && unitFromAddr(addr)) { const rm = /투룸/.test(old) ? '2룸' : ((String(old).match(/([123])\s*룸/)||[])[1] ? String(old).match(/([123])\s*룸/)[1]+'룸' : '2룸'); return ((/잇다/.test(old) || /신촌로\s*3나?길\s*8-10/.test(addr)) ? '창천잇다 ' : '창천 ')+rm+' '+unitFromAddr(addr); }
   let r = suggestPropName0(old, all).replace(/(\d)호(?=\s|$)/g,'$1');
-  if(addr && !/\d{3,}/.test(r) && !/\d층$/.test(r) && !/\s[A-D]$/.test(r)){ const u = unitFromAddr(addr); if(u) r += ' '+u; }
+  if(addr && !/\d{3,}/.test(r) && !/\d층$/.test(r) && !/\s[A-D]$/.test(r)){ const u = unitFromAddr(addr); if(u) r += ' '+u; else { const f = String(addr).match(/(\d{1,2})\s*층/); if(f) r += ' '+f[1]+'층'; } }
   return r;
 }
 function suggestPropName0(old, all){
@@ -1479,6 +1479,53 @@ function openRenameSheet(){
     await saveProperties();
     root.remove(); render();
     alert(`${todo.length}곳 이름을 바꿨어.`);
+  };
+}
+
+const ROOM_PRESET = [
+  {room:'용강 2룸', re:/^용강/},
+  {room:'제니하우스', re:/^제니하우스/},
+  {room:'준삐삐하우스', re:/^준삐삐/},
+  {room:'동교스테이', re:/^동교스테이/},
+  {room:'연남 3룸', re:/^연남/},
+  {room:'서교 복층', re:/^서교/},
+  {room:'오송아트빌', re:/^오송아트빌/},
+  {room:'이미선', re:/^(파라다이스텔|LG팰리스\s*(729|1520))/},
+  {room:'이수현', re:/^(LG팰리스\s*(1408|1412|1208)|와우산로)/},
+  {room:'창천잇다', re:/^창천잇다/},
+  {room:'망원 2룸', re:/^망원\s*2룸/},
+  {room:'망원 3룸', re:/^망원\s*3룸/},
+  {room:'동교로', re:/^동교로/},
+];
+function openRoomSheet(){
+  const rows = ROOM_PRESET.map(r=>({ room:r.room, ids: state.properties.filter(p=>r.re.test(p.name)).map(p=>p.id) }));
+  const root = document.createElement('div');
+  root.className='overlay'; root.id='overlay';
+  const noRoom = state.properties.filter(p=>!rows.some(r=>r.ids.includes(p.id)));
+  root.innerHTML = `<div class="sheet">
+    <h2>카톡방 한번에 연결</h2>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">방 이름은 직접 고칠 수 있어. 연결하면 해당 숙소의 "카톡방 이름" 칸에 들어가. 숙소가 하나도 없는 방은 건너뛰어.</div>
+    <div style="max-height:54vh;overflow-y:auto;">
+    ${rows.map((r,i)=>`<div style="padding:8px 0;border-bottom:1px solid var(--line,#eee);">
+      <input data-rm="${i}" value="${esc(r.room)}" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line,#ddd);border-radius:8px;font-size:15px;font-weight:700;">
+      <div style="font-size:12px;margin-top:4px;color:${r.ids.length?'var(--ink-soft)':'var(--clay,#c33)'};">${r.ids.length ? r.ids.map(id=>esc(propById(id).name)).join(', ') : '맞는 숙소가 없어 (건너뜀)'}</div>
+    </div>`).join('')}
+    ${noRoom.length?`<div style="font-size:12px;color:var(--ink-soft);padding:10px 0;">방이 없는 숙소: ${noRoom.map(p=>esc(p.name)).join(', ')}</div>`:''}
+    </div>
+    <div class="sheet-actions"><button class="cancel-btn" id="rm_close">닫기</button><button class="save-btn" id="rm_apply">연결하기</button></div>
+  </div>`;
+  document.body.appendChild(root);
+  root.querySelector('#rm_close').onclick = ()=> root.remove();
+  root.querySelector('#rm_apply').onclick = async ()=>{
+    root.querySelectorAll('[data-rm]').forEach(inp=>{ rows[Number(inp.dataset.rm)].room = inp.value.trim(); });
+    const map = new Map();
+    rows.forEach(r=>{ if(r.room) r.ids.forEach(id=> map.set(id, r.room)); });
+    if(!map.size){ alert('연결할 숙소가 없어.'); return; }
+    if(!confirm(`${map.size}곳에 카톡방 이름을 넣을까?`)) return;
+    state.properties = state.properties.map(p=> map.has(p.id) ? {...p, room: map.get(p.id)} : p);
+    await saveProperties();
+    root.remove(); render();
+    alert(`${map.size}곳에 카톡방 이름을 넣었어.`);
   };
 }
 
@@ -2114,7 +2161,7 @@ function renderScheduleCards(){
 function renderAll(){
   const q = state.search.trim().toLowerCase();
   const list = state.properties.filter(p =>
-    !q || p.name.toLowerCase().includes(q) || (p.owner||'').toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q)
+    !q || p.name.toLowerCase().includes(q) || (p.owner||'').toLowerCase().includes(q) || (p.room||'').toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q)
   );
   const cards = list.map(p=>{
     const open = state.openIds.has(p.id);
@@ -2123,7 +2170,7 @@ function renderAll(){
       <div class="prop-top" data-toggle="${p.id}">
         <div>
           <div class="prop-name">${esc(p.name)}</div>
-          <div class="prop-sub">${esc(p.owner||'담당자 미기재')} · ${esc(p.address)}</div>
+          <div class="prop-sub">${esc(p.owner||'담당자 미기재')} · ${esc(p.address)}${p.room?' · 💬 '+esc(p.room):''}</div>
         </div>
         <div class="chevron">▶</div>
       </div>
@@ -2161,6 +2208,7 @@ function renderAll(){
         <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
           ${isAdmin() ? `<button class="pill-btn" id="bulkParkingBtn">🚗 여러 업체에 주차등록 정보 한번에 적용</button>
           <button class="pill-btn" id="renamePropsBtn">✏️ 숙소 이름 한번에 정리</button>
+          <button class="pill-btn" id="roomPropsBtn">💬 카톡방 한번에 연결</button>
           <button class="pill-btn" id="cleanupAddressBtn">🧹 주소 띄어쓰기 한번에 정리</button>
           ${CLOUD_ENABLED ? `<button class="pill-btn" id="cleanupPhotosBtn">🗑️ 30일 지난 사진 정리</button>
           <button class="pill-btn" id="uploadLocalBtn">☁️ 이 폰의 데이터를 서버로 올리기</button>` : ''}` : ''}
@@ -2320,7 +2368,8 @@ function openEditSheet(prop){
     <div class="sheet">
       <h2>${e.id ? '업체 정보 수정' : '새 업체 추가'}</h2>
       <div class="field"><label>상호명</label><input id="f_name" value="${esc(e.name)}"></div>
-      <div class="field"><label>담당자</label><input id="f_owner" value="${esc(e.owner)}"></div>
+      <div class="field"><label>담당자(대표)</label><input id="f_owner" value="${esc(e.owner)}"></div>
+      <div class="field"><label>카톡방 이름</label><input id="f_room" value="${esc(e.room||'')}" placeholder="예: 용강동2룸 업무방"></div>
       <div class="field"><label>연락처</label><input id="f_phone" value="${esc(e.phone)}"></div>
       <div class="field"><label>주소</label><input id="f_address" value="${esc(e.address)}"></div>
       <div class="field"><label>비밀번호</label><input id="f_password" value="${esc(e.password)}"></div>
@@ -2354,6 +2403,7 @@ function openEditSheet(prop){
     const vals = {
       name: document.getElementById('f_name').value.trim(),
       owner: document.getElementById('f_owner').value.trim(),
+      room: document.getElementById('f_room').value.trim(),
       phone: document.getElementById('f_phone').value.trim(),
       address: document.getElementById('f_address').value.trim(),
       password: document.getElementById('f_password').value.trim(),
@@ -2710,6 +2760,8 @@ function attachHandlers(){
   });
   const bulkParkingBtn = document.getElementById('bulkParkingBtn');
   if(bulkParkingBtn) bulkParkingBtn.onclick = openBulkParkingSheet;
+  const roomPropsBtn = document.getElementById('roomPropsBtn');
+  if(roomPropsBtn) roomPropsBtn.onclick = openRoomSheet;
   const renamePropsBtn = document.getElementById('renamePropsBtn');
   if(renamePropsBtn) renamePropsBtn.onclick = openRenameSheet;
   const cleanupAddressBtn = document.getElementById('cleanupAddressBtn');
