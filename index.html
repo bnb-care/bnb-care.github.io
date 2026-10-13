@@ -771,9 +771,10 @@ function buildPersonalText(st, withPw, withAddr, greet){
     const note = (r.dayNotes||{})[id];
     lines.push('');
     if(i>0){ lines.push(bar); }
-    lines.push(`${i+1}. ${p.name}${(withPw && p.password) ? ' | '+p.password : ''}`);
-    if(withAddr && p.address) lines.push(`📍 ${p.address}`);
-    if(note) lines.push(`📝 ${note}`);
+    const pwTxt = /매번\s*(바뀜|바뀌|변경)/.test(p.password||'') ? '비번 추후 전달' : (p.password||'');
+    lines.push(`${i+1}. ${p.name}${(withPw && pwTxt) ? ' | '+pwTxt : ''}`);
+    if(withAddr && p.address) lines.push(`- ${p.address}`);
+    if(note) lines.push(`- ${note}`);
   });
   if(greet){ lines.push(''); lines.push(greet); }
   return lines.join('\n');
