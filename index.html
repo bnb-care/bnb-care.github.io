@@ -178,11 +178,12 @@
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
-  .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#F3D2C5;color:#5a2a1c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cchip{display:block;border-left:4px solid #C9CCC4;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#ECEEE8;color:#3a3a35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cchip.pri{font-weight:600;}
   .cchip.lg{display:inline-flex;align-items:center;gap:3px;margin:0;padding:3px 8px;font-size:11px;}
   .cchip .pd{color:var(--clay);font-weight:800;}
-  .cchip.done{background:var(--teal-soft);color:var(--teal);}
+  .cchip.done{opacity:.5;}
+  .cchip.done .sn::before,.cchip.done .fn::before{content:'✓ ';}
   .cchip .fn{display:none;}
   @media(min-width:700px){ .cchip .fn{display:inline;} .cchip .sn{display:none;} }
   .red{color:#c0392b;} .blue{color:#2f5fb5;}
@@ -192,7 +193,7 @@
   .wk-day .wd b{font-size:20px;}
   .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
   .wk-chip{display:flex;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
-  .wk-chip.done{background:var(--teal-soft,#dcebe7);}
+  .wk-chip.done{opacity:.55;}
   .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
   .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
   .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
@@ -1123,12 +1124,13 @@ function shortName(n){
 }
 function chipsFor(rec){
   const pri = rec.priorityIds || [];
+  // 보기 순서는 항상 같게: 대표 색 순서 → 같은 색 안에서는 이름순 (저장된 순서는 안 바뀜)
   return rec.propertyIds.map(id=>{
     const p = propById(id); if(!p) return null;
     const tasks = (rec.tasks||{})[id] || [];
     const done = tasks.length && tasks.every(t=>t.done);
-    return { id, name:p.name, pri: pri.includes(id), done, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
-  }).filter(Boolean);
+    return { id, p, name:p.name, pri: pri.includes(id), done, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
+  }).filter(Boolean).sort((x,y)=> cmpByColor(x.p, y.p));
 }
 function weekStartOf(ds){
   const [y,m,d] = ds.split('-').map(Number); const dt = new Date(y, m-1, d);
@@ -1164,7 +1166,7 @@ function renderWeekView(){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     return `<div class="wk-day ${ds===tStr?'today':''}" data-cal-day="${ds}">
       <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}<span class="cn">${chips.length?chips.length+'건':''}</span></div>
-      ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
+      ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}" style="${chipStyle(c)}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
     </div>`;
   }).join('');
   return head + body;
@@ -1198,7 +1200,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
   const chips = rec ? chipsFor(rec) : [];
   const [py,pm,pd] = pick.split('-').map(Number); const pw = new Date(py,pm-1,pd).getDay(); const hn = holidayName(pick);
   const list = chips.length ? chips.map(c=>{ const p = propById(c.id);
-      return `<div class="wk-chip ${c.done?'done':''}" style="${c.done?'':'background:var(--surface);border:1px solid var(--paper-line);'}${p?ownerStyle(p,false):''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`; }).join('')
+      return `<div class="wk-chip ${c.done?'done':''}" style="background:var(--surface);border:1px solid var(--paper-line);${p?ownerStyle(p,true):''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`; }).join('')
     : '<div class="wk-empty">일정 없음</div>';
   return head + `<div class="mc-grid">${cells}</div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span></div>
@@ -1234,7 +1236,7 @@ function renderCalendarTab(){
       const chips = chipsFor(rec);
       rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
         <div class="d"><span class="${cls}">${month+1}/${d} (${DAY_NAMES[wd]}) ${holidayName(ds)?'· '+holidayName(ds):''}</span><span style="font-size:12px;color:var(--ink-soft);">${chips.length}건</span></div>
-        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
+        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${chipStyle(c)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
     }
     return head + (rows.length ? rows.join('') : '<div class="empty">이 달에는 등록된 일정이 없어.</div>');
   }
@@ -1254,11 +1256,11 @@ function renderCalendarTab(){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
-      ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> <span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
+      ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${chipStyle(c)}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> <span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">✓ 완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
@@ -1348,76 +1350,108 @@ function openImportSheet(){
   const root = document.createElement('div');
   root.className = 'overlay'; root.id = 'overlayImp';
   const y = state.calMonth ? state.calMonth.year : new Date().getFullYear();
+  let inText = '';
+  // 공용 도우미: 일정에서 숙소 빼기 / 취소된 일정 후보 찾기
+  const removeFromDay = async (ds, pid)=>{
+    let rec = null;
+    try{ const x = await window.storage.get('today:'+ds, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){}
+    if(!rec || !(rec.propertyIds||[]).includes(pid)) return false;
+    rec.propertyIds = rec.propertyIds.filter(x=>x!==pid);
+    if(rec.tasks) delete rec.tasks[pid];
+    rec.priorityIds = (rec.priorityIds||[]).filter(x=>x!==pid);
+    if(rec.assign) delete rec.assign[pid];
+    if(rec.dayNotes) delete rec.dayNotes[pid];
+    if(rec.dayPass) delete rec.dayPass[pid];
+    try{
+      if(!rec.propertyIds.length && !(rec.excludedIds||[]).length){ await window.storage.delete('today:'+ds, false); }
+      else await window.storage.set('today:'+ds, JSON.stringify(rec), false);
+      return true;
+    }catch(err){ return false; }
+  };
+  const findCancels = async (pid, pastedSet)=>{
+    const out = []; if(!pastedSet.size) return out;
+    const maxDs = [...pastedSet].sort().slice(-1)[0];
+    const [ty,tm,td] = todayStr().split('-').map(Number);
+    for(let i=0; i<=150; i++){
+      const dt = new Date(ty, tm-1, td+i); const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+      if(ds > maxDs) break;
+      if(pastedSet.has(ds)) continue;
+      let x = null; try{ x = await window.storage.get('today:'+ds, false); }catch(e){}
+      if(!x || !x.value) continue;
+      try{ const rec = JSON.parse(x.value);
+        if((rec.propertyIds||[]).includes(pid)){
+          const tasks = (rec.tasks||{})[pid]||[]; const st = staffById((rec.assign||{})[pid]);
+          out.push({ ds, pid, worker: st?st.name:'', hasDone: tasks.some(t=>t.done) });
+        } }catch(e){}
+    }
+    return out;
+  };
+  const labDs = (ds)=> `${Number(ds.slice(5,7))}/${Number(ds.slice(8))}`;
+  const cancelHtml = (cancels, showName)=> cancels.length ? `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--paper-line);">
+        <div style="font-size:13px;font-weight:700;color:var(--clay);">🗑 취소된 일정 후보 ${cancels.length}건</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px;">붙여넣은 내용에는 없는데 앱에는 있는 날짜야 (오늘 이후만). 체크한 날짜는 그 숙소가 일정에서 빠져.</div>
+        ${cancels.map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;">
+          <input type="checkbox" data-kk-del="${i}" checked style="margin-top:3px;">
+          <span><b>${labDs(c.ds)}</b>${showName?` · ${esc((propById(c.pid)||{}).name||'')}`:''}${c.worker?` · 배정 ${esc(c.worker)}`:''}${c.hasDone?' · <b style="color:var(--clay)">체크 기록 있음</b>':''}</span></label>`).join('')}</div>` : '';
+  const runCancels = async (cancels)=>{
+    let removed = 0, failed = 0;
+    for(const el of root.querySelectorAll('[data-kk-del]')){
+      if(!el.checked) continue;
+      const c = cancels[Number(el.dataset.kkDel)];
+      if(await removeFromDay(c.ds, c.pid)) removed++; else failed++;
+    }
+    return { removed, failed };
+  };
+  const isKakaoFormat = (t)=> String(t||'').split(/\r?\n/).some(l=> /\d{1,2}\s*월\s*\d{1,2}\s*일/.test(l) && /(체크인|\d+\s*명|[■□◼◻▪])/.test(l));
+
   const stepInput = ()=>{
     root.innerHTML = `<div class="sheet">
       <h2>📥 일정 가져오기</h2>
-      <button class="save-btn" id="imp_kakao" style="width:100%;margin-bottom:10px;">💬 카톡 일정표 붙여넣기 (숙소 1곳)</button>
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">또는 아래에 날짜별 목록을 붙여넣기</div>
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">한 줄에 한 날짜씩 붙여넣어줘. 예) 10/3: 홍대102호, 창천동잇다303호<br>이미 등록된 일정은 지워지지 않고, 없는 숙소만 추가돼.</div>
-      <textarea id="imp_text" style="width:100%;height:220px;font-size:13px;" placeholder="10/2: 동교스테이C, 엘지팰리스1208호&#10;10/3: 홍대102호, 서교동복층"></textarea>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">일정을 그대로 붙여넣어줘. 모양은 앱이 알아서 알아봐.<br>
+      · <b>대표 카톡 일정표</b> 그대로 (숙소 1곳) — 예) 10월 5일(월) 29~5, 4명 체크인 ■당일<br>
+      · <b>날짜별 목록</b> (여러 숙소) — 예) 10/3: 홍대102호, 창천동잇다303호<br>
+      이미 등록된 일정은 그대로 두고 없는 것만 추가해. 붙여넣은 내용에 없는 앞으로의 일정은 지울지 물어봐.</div>
+      <textarea id="imp_text" style="width:100%;height:240px;font-size:13px;" placeholder="- 10월 5일(월) 29~5, 4명 체크인 ■당일&#10;- 10월 7일(수) 5~7, 3명 체크인&#10;&#10;또는&#10;10/2: 동교스테이C, 엘지팰리스1208호&#10;10/3: 홍대102호, 서교동복층">${esc(inText)}</textarea>
       <div class="sheet-actions"><button class="cancel-btn" id="imp_cancel">취소</button><button class="save-btn" id="imp_next">다음 (미리보기)</button></div></div>`;
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
-    document.getElementById('imp_kakao').onclick = stepKakao;
     document.getElementById('imp_next').onclick = ()=>{
-      const data = parseScheduleText(document.getElementById('imp_text').value, y);
-      if(!Object.keys(data).length){ alert('날짜 형식(예: 10/3: 숙소, 숙소)으로 된 줄이 없어.'); return; }
+      inText = document.getElementById('imp_text').value;
+      if(isKakaoFormat(inText)){ stepKakao(); return; }
+      const data = parseScheduleText(inText, y);
+      if(!Object.keys(data).length){ alert('날짜가 보이는 줄을 못 찾았어.\n예) 10월 5일(월) ... 체크인 / 10/3: 숙소, 숙소'); return; }
       stepMap(data);
     };
   };
 
   const stepKakao = ()=>{
     const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const rows0 = parseKakaoSchedule(inText, y);
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
-      <h2>💬 카톡 일정표</h2>
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">카톡방(숙소)을 고르고, 담당자가 보낸 일정표 문자를 그대로 붙여넣어줘.<br>날짜 줄만 읽고, 주소·비밀번호 같은 내용은 읽지도 저장하지도 않아.</div>
+      <h2>💬 대표 카톡 일정표</h2>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">날짜 ${rows0.length}개를 찾았어. 이 일정표가 어느 숙소(카톡방) 건지 골라줘.<br>날짜 줄만 읽고, 주소·비밀번호 같은 내용은 읽지도 저장하지도 않아.</div>
       <div class="field"><label>숙소 (카톡방 이름)</label><select id="kk_prop"><option value="">숙소 선택</option>${props.map(pp=>`<option value="${esc(pp.id)}">${esc(pp.name)}</option>`).join('')}</select></div>
-      <textarea id="kk_text" style="width:100%;height:200px;font-size:13px;" placeholder="- 10월 5일(월) 29~5, 4명 체크인 ■당일&#10;- 10월 7일(수) 5~7, 3명 체크인"></textarea>
       <div class="sheet-actions"><button class="cancel-btn" id="kk_back">뒤로</button><button class="save-btn" id="kk_next">다음 (미리보기)</button></div></div>`;
     document.getElementById('kk_back').onclick = stepInput;
     document.getElementById('kk_next').onclick = ()=>{
       const pid = document.getElementById('kk_prop').value;
       if(!pid){ alert('숙소를 먼저 골라줘.'); return; }
-      const rows = parseKakaoSchedule(document.getElementById('kk_text').value, y);
-      if(!rows.length){ alert('"10월 5일(월) ..." 형식의 날짜 줄을 못 찾았어.'); return; }
-      stepKakaoPreview(pid, rows);
+      if(!rows0.length){ alert('"10월 5일(월) ..." 형식의 날짜 줄을 못 찾았어.'); return; }
+      stepKakaoPreview(pid, rows0);
     };
   };
   const stepKakaoPreview = async (pid, rows)=>{
     const pr = propById(pid);
     const exists = {};
     for(const r of rows){ try{ const x = await window.storage.get('today:'+r.ds, false); if(x && x.value){ const rec = JSON.parse(x.value); exists[r.ds] = (rec.propertyIds||[]).includes(pid); } }catch(e){} }
-    // 문자에 없는데 앱에는 있는 날짜 = 취소된 일정 후보 (오늘 ~ 문자의 마지막 날짜 사이만 확인)
-    const pasted = new Set(rows.map(r=>r.ds));
-    const maxDs = rows.map(r=>r.ds).sort().slice(-1)[0];
-    const cancels = [];
-    {
-      const t0 = todayStr(); const [ty,tm,td] = t0.split('-').map(Number);
-      for(let i=0; i<=150; i++){
-        const dt = new Date(ty, tm-1, td+i); const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
-        if(ds > maxDs) break;
-        if(pasted.has(ds)) continue;
-        let x = null; try{ x = await window.storage.get('today:'+ds, false); }catch(e){}
-        if(!x || !x.value) continue;
-        try{ const rec = JSON.parse(x.value);
-          if((rec.propertyIds||[]).includes(pid)){
-            const tasks = (rec.tasks||{})[pid]||[]; const st = staffById((rec.assign||{})[pid]);
-            cancels.push({ ds, worker: st?st.name:'', hasDone: tasks.some(t=>t.done) });
-          } }catch(e){}
-      }
-    }
-    const lab = (ds)=> `${Number(ds.slice(5,7))}/${Number(ds.slice(8))}`;
+    const cancels = await findCancels(pid, new Set(rows.map(r=>r.ds)));
+    const lab = labDs;
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
       <h2>${esc(pr.name)} 일정 확인</h2>
       <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><b>추가</b>: 체크한 날짜만 등록돼. 이미 등록된 날짜는 건너뛰어.</div>
       ${rows.map((r,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;">
         <input type="checkbox" data-kk-row="${i}" ${exists[r.ds]?'disabled':'checked'} style="margin-top:3px;">
         <span><b>${lab(r.ds)}</b>${r.guests?` · ${r.guests}명 체크인`:''}${r.gap?` · 비는 기간 ${esc(r.gap)}`:''}${r.today?' · <b style="color:var(--clay)">당일</b>':''}${exists[r.ds]?' · <span style="color:var(--ink-soft)">이미 있음</span>':''}</span></label>`).join('')}
-      ${cancels.length ? `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--paper-line);">
-        <div style="font-size:13px;font-weight:700;color:var(--clay);">🗑 취소된 일정 후보 ${cancels.length}건</div>
-        <div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px;">문자에는 없는데 앱에는 있는 날짜야 (오늘 이후만). 체크한 날짜는 이 숙소가 일정에서 빠져.</div>
-        ${cancels.map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;">
-          <input type="checkbox" data-kk-del="${i}" checked style="margin-top:3px;">
-          <span><b>${lab(c.ds)}</b>${c.worker?` · 배정 ${esc(c.worker)}`:''}${c.hasDone?' · <b style="color:var(--clay)">체크 기록 있음</b>':''}</span></label>`).join('')}</div>` : ''}
+      ${cancelHtml(cancels, false)}
       <div class="sheet-actions"><button class="cancel-btn" id="kp_back">뒤로</button><button class="save-btn" id="kp_go">${cancels.length?'추가·삭제 반영':'등록'}</button></div></div>`;
     document.getElementById('kp_back').onclick = stepKakao;
     document.getElementById('kp_go').onclick = async ()=>{
@@ -1439,24 +1473,7 @@ function openImportSheet(){
         if(note){ rec.dayNotes = rec.dayNotes||{}; if(!rec.dayNotes[pid]) rec.dayNotes[pid] = note; }
         try{ await window.storage.set('today:'+r.ds, JSON.stringify(rec), false); added++; }catch(err){ failed++; }
       }
-      for(const el of root.querySelectorAll('[data-kk-del]')){
-        if(!el.checked) continue;
-        const c = cancels[Number(el.dataset.kkDel)];
-        let rec = null;
-        try{ const x = await window.storage.get('today:'+c.ds, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){}
-        if(!rec || !(rec.propertyIds||[]).includes(pid)) continue;
-        rec.propertyIds = rec.propertyIds.filter(x=>x!==pid);
-        if(rec.tasks) delete rec.tasks[pid];
-        rec.priorityIds = (rec.priorityIds||[]).filter(x=>x!==pid);
-        if(rec.assign) delete rec.assign[pid];
-        if(rec.dayNotes) delete rec.dayNotes[pid];
-        if(rec.dayPass) delete rec.dayPass[pid];
-        try{
-          if(!rec.propertyIds.length && !(rec.excludedIds||[]).length){ await window.storage.delete('today:'+c.ds, false); }
-          else await window.storage.set('today:'+c.ds, JSON.stringify(rec), false);
-          removed++;
-        }catch(err){ failed++; }
-      }
+      { const rr = await runCancels(cancels); removed += rr.removed; failed += rr.failed; }
       root.remove();
       if(state.selectedDate) await loadTodayRecord();
       try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
@@ -1480,8 +1497,26 @@ function openImportSheet(){
     document.getElementById('imp_back').onclick = stepInput;
     document.getElementById('imp_go').onclick = async ()=>{
       const map = {}; root.querySelectorAll('[data-imp-map]').forEach(sel=>{ map[names[Number(sel.dataset.impMap)]] = sel.value; });
-      const btn = document.getElementById('imp_go'); btn.disabled = true; btn.textContent = '저장 중…';
-      let added = 0, exist = 0, skipped = 0, days = 0, failed = 0;
+      const btn = document.getElementById('imp_go'); btn.disabled = true; btn.textContent = '확인 중…';
+      const cset = {};
+      Object.keys(data).forEach(ds=> data[ds].forEach(e=>{ const id = map[e.raw]; if(id){ (cset[id] = cset[id] || new Set()).add(ds); } }));
+      let cancels = [];
+      for(const id of Object.keys(cset)) cancels = cancels.concat(await findCancels(id, cset[id]));
+      if(cancels.length){ stepListCancel(data, map, cancels); return; }
+      await runImport(data, map, []);
+    };
+  };
+  const stepListCancel = (data, map, cancels)=>{
+    root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
+      <h2>취소된 일정 확인</h2>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">추가할 일정은 그대로 등록돼. 아래는 붙여넣은 내용에 없는데 앱에는 있는 앞으로의 일정이야.</div>
+      ${cancelHtml(cancels, true)}
+      <div class="sheet-actions"><button class="cancel-btn" id="lc_back">뒤로</button><button class="save-btn" id="lc_go">추가·삭제 반영</button></div></div>`;
+    document.getElementById('lc_back').onclick = ()=> stepMap(data);
+    document.getElementById('lc_go').onclick = async ()=>{ const b = document.getElementById('lc_go'); b.disabled = true; b.textContent = '저장 중…'; await runImport(data, map, cancels); };
+  };
+  const runImport = async (data, map, cancels)=>{
+      let added = 0, exist = 0, skipped = 0, days = 0, failed = 0, removed = 0;
       for(const ds of Object.keys(data).sort()){
         let rec = null;
         try{ const r = await window.storage.get('today:'+ds, false); if(r && r.value) rec = JSON.parse(r.value); }catch(e){}
@@ -1507,8 +1542,11 @@ function openImportSheet(){
       root.remove();
       if(state.selectedDate) await loadTodayRecord();
       render();
-      alert(`가져오기 끝!\n새로 추가 ${added}건 (${days}일)\n이미 있어서 건너뜀 ${exist}건\n이름 못 찾아 건너뜀 ${skipped}건${failed?`\n저장 실패 ${failed}일`:''}`);
-    };
+      { const rr = await runCancels(cancels); removed += rr.removed; failed += rr.failed; }
+      root.remove();
+      if(state.selectedDate) await loadTodayRecord();
+      render();
+      alert(`가져오기 끝!\n새로 추가 ${added}건 (${days}일)${removed?`\n취소된 일정 삭제 ${removed}건`:''}\n이미 있어서 건너뜀 ${exist}건\n이름 못 찾아 건너뜀 ${skipped}건${failed?`\n저장 실패 ${failed}일`:''}`);
   };
   document.body.appendChild(root);
   if(!state.properties.length){ alert('숙소 데이터가 아직 없어.'); root.remove(); return; }
@@ -1595,6 +1633,7 @@ function groupOf(p){
   const ph = String(p.phone||'').replace(/\D/g,''), nm = String(p.name||'').trim();
   return GROUP_COLORS.findIndex(g => (g.phone && g.phone===ph) || (g.name && g.name.test(nm)));
 }
+function chipStyle(c){ const st=ownerStyle(c.p,true); return st? st.replace('8px','4px') : ''; }
 function ownerStyle(p, tint){
   if(!p) return '';
   let c = OWNER_COLORS[String(p.owner||'').trim()];
