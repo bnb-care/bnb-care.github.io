@@ -178,12 +178,11 @@
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
-  .cchip{display:block;border-left:4px solid #C9CCC4;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#ECEEE8;color:#3a3a35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#F3D2C5;color:#5a2a1c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cchip.pri{font-weight:600;}
   .cchip.lg{display:inline-flex;align-items:center;gap:3px;margin:0;padding:3px 8px;font-size:11px;}
   .cchip .pd{color:var(--clay);font-weight:800;}
-  .cchip.done{opacity:.5;}
-  .cchip.done .sn::before,.cchip.done .fn::before{content:'✓ ';}
+  .cchip.done{background:var(--teal-soft);color:var(--teal);}
   .cchip .fn{display:none;}
   @media(min-width:700px){ .cchip .fn{display:inline;} .cchip .sn{display:none;} }
   .red{color:#c0392b;} .blue{color:#2f5fb5;}
@@ -193,7 +192,7 @@
   .wk-day .wd b{font-size:20px;}
   .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
   .wk-chip{display:flex;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
-  .wk-chip.done{opacity:.55;}
+  .wk-chip.done{background:var(--teal-soft,#dcebe7);}
   .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
   .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
   .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
@@ -1124,13 +1123,13 @@ function shortName(n){
 }
 function chipsFor(rec){
   const pri = rec.priorityIds || [];
-  // 보기 순서는 항상 같게: 대표 색 순서 → 같은 색 안에서는 이름순 (저장된 순서는 안 바뀜)
+  // 보기 순서: 당일체크인 먼저 → 나머지는 숙소 리스트 순서(대표 색 순 → 이름순) (저장된 순서는 안 바뀜)
   return rec.propertyIds.map(id=>{
     const p = propById(id); if(!p) return null;
     const tasks = (rec.tasks||{})[id] || [];
     const done = tasks.length && tasks.every(t=>t.done);
     return { id, p, name:p.name, pri: pri.includes(id), done, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
-  }).filter(Boolean).sort((x,y)=> cmpByColor(x.p, y.p));
+  }).filter(Boolean).sort((x,y)=> (y.pri-x.pri) || cmpByColor(x.p, y.p));
 }
 function weekStartOf(ds){
   const [y,m,d] = ds.split('-').map(Number); const dt = new Date(y, m-1, d);
@@ -1166,7 +1165,7 @@ function renderWeekView(){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     return `<div class="wk-day ${ds===tStr?'today':''}" data-cal-day="${ds}">
       <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}<span class="cn">${chips.length?chips.length+'건':''}</span></div>
-      ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}" style="${chipStyle(c)}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
+      ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}" style="${barStyle(c.p)}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
     </div>`;
   }).join('');
   return head + body;
@@ -1236,7 +1235,7 @@ function renderCalendarTab(){
       const chips = chipsFor(rec);
       rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
         <div class="d"><span class="${cls}">${month+1}/${d} (${DAY_NAMES[wd]}) ${holidayName(ds)?'· '+holidayName(ds):''}</span><span style="font-size:12px;color:var(--ink-soft);">${chips.length}건</span></div>
-        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${chipStyle(c)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
+        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
     }
     return head + (rows.length ? rows.join('') : '<div class="empty">이 달에는 등록된 일정이 없어.</div>');
   }
@@ -1256,11 +1255,11 @@ function renderCalendarTab(){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
-      ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${chipStyle(c)}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> <span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
+      ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> <span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">✓ 완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
@@ -1633,7 +1632,7 @@ function groupOf(p){
   const ph = String(p.phone||'').replace(/\D/g,''), nm = String(p.name||'').trim();
   return GROUP_COLORS.findIndex(g => (g.phone && g.phone===ph) || (g.name && g.name.test(nm)));
 }
-function chipStyle(c){ const st=ownerStyle(c.p,true); return st? st.replace('8px','4px') : ''; }
+function barStyle(p){ const st=ownerStyle(p,false); return st? st.replace('8px','4px') : ''; }
 function ownerStyle(p, tint){
   if(!p) return '';
   let c = OWNER_COLORS[String(p.owner||'').trim()];
