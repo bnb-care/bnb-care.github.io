@@ -680,7 +680,7 @@ function getSent(){ try{ return JSON.parse(localStorage.getItem(sentKey())||'{}'
 function staffSig(stId){
   const r = state.todayRecord; if(!r) return '';
   const ids = staffAssignedProps(stId).slice().sort();
-  return ids.map(id=> id+':'+(((r.dayNotes||{})[id])||'')).join('|');
+  return ids.map(id=> id+':'+(((r.dayNotes||{})[id])||'')+((r.priorityIds||[]).includes(id)?'*':'')).join('|');
 }
 function markSent(stId){ const m = getSent(); m[stId] = {t:Date.now(), sig:staffSig(stId)}; try{ localStorage.setItem(sentKey(), JSON.stringify(m)); }catch(e){} }
 // none / ok / changed
@@ -769,11 +769,14 @@ function buildPersonalText(st, withPw, withAddr, greet){
   ids.forEach((id,i)=>{
     const p = propById(id); if(!p) return;
     const note = (r.dayNotes||{})[id];
+    const isPri = (r.priorityIds||[]).includes(id) && !/당일/.test(note||'');
     lines.push('');
-    if(i>0){ lines.push(bar); }
+    if(i>0){ lines.push(bar); lines.push(''); }
     const pwTxt = /매번\s*(바뀜|바뀌|변경)/.test(p.password||'') ? '비번 추후 전달' : (p.password||'');
     lines.push(`${i+1}. ${p.name}${(withPw && pwTxt) ? ' | '+pwTxt : ''}`);
+    if((withAddr && p.address) || note || isPri) lines.push('');
     if(withAddr && p.address) lines.push(`- ${p.address}`);
+    if(isPri) lines.push('- 당일 체크인');
     if(note) lines.push(`- ${note}`);
   });
   if(greet){ lines.push(''); lines.push(greet); }
