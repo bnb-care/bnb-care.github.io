@@ -1090,7 +1090,7 @@ function renderWeekView(){
   const head = `<div class="cal-head">
       <div class="ttl">${a.getMonth()+1}/${a.getDate()} ~ ${b.getMonth()+1}/${b.getDate()}</div>
       <div class="navg"><button data-cal-wk="-1">◀</button><button data-cal-wk="today">이번 주</button><button data-cal-wk="1">▶</button></div>
-      <div class="seg"><button data-cal-view="grid">달력</button><button data-cal-view="week" class="on">주간</button><button data-cal-view="list">목록</button></div>
+      <div class="seg"><button data-cal-view="grid">월간</button><button data-cal-view="week" class="on">주간</button><button data-cal-view="list">목록</button></div>
       ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}
     </div>`;
   const body = days.map(({dt,ds})=>{
@@ -1137,7 +1137,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
       return `<div class="wk-chip ${c.done?'done':''}" style="${c.done?'':'background:var(--surface);border:1px solid var(--paper-line);'}${p?ownerStyle(p,false):''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:var(--clay);color:#fff;">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`; }).join('')
     : '<div class="wk-empty">일정 없음</div>';
   return head + `<div class="mc-grid">${cells}</div>
-    <div class="cc-panel"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳</b><button data-cal-day="${pick}">자세히 ▶</button></div>${list}</div>`;
+    <div class="cc-panel"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳</b>${chips.length?`<button data-cal-day="${pick}">자세히 ▶</button>`:''}${isAdmin()?`<button data-cal-add="${pick}">+ 일정 추가</button>`:''}</div>${list}</div>`;
 }
 function renderCalendarTab(){
   if(!cloud) state.monthRecords = readLocalMonth();
@@ -1154,7 +1154,7 @@ function renderCalendarTab(){
     <div class="cal-head">
       <div class="ttl">${year}년 ${month+1}월</div>
       <div class="navg"><button data-cal-nav="-1">◀</button><button data-cal-today="1">오늘</button><button data-cal-nav="1">▶</button></div>
-      <div class="seg"><button data-cal-view="grid" class="${state.calView==='grid'?'on':''}">달력</button><button data-cal-view="week" class="${state.calView==='week'?'on':''}">주간</button><button data-cal-view="list" class="${state.calView==='list'?'on':''}">목록</button></div>
+      <div class="seg"><button data-cal-view="grid" class="${state.calView==='grid'?'on':''}">월간</button><button data-cal-view="week" class="${state.calView==='week'?'on':''}">주간</button><button data-cal-view="list" class="${state.calView==='list'?'on':''}">목록</button></div>
       ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}
     </div>
     <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 10px;">이 달 일정 ${mKeys.length}일 · 총 ${total}건 · 날짜를 누르면 그날 일정으로 이동</div>`;
@@ -1199,6 +1199,7 @@ function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
   document.querySelectorAll('[data-cal-today]').forEach(b=> b.onclick = ()=>{ const d = new Date(); state.calMonth = { year:d.getFullYear(), month:d.getMonth() }; state.calSelDay = todayStr(); watchMonth(); render(); });
   document.querySelectorAll('[data-cal-view]').forEach(b=> b.onclick = ()=>{ state.calView = b.dataset.calView; try{ localStorage.setItem('pref:calView', state.calView); }catch(e){} render(); });
+  document.querySelectorAll('[data-cal-add]').forEach(el=> el.onclick = async ()=>{ state.tab = 'today'; await selectScheduleDate(el.dataset.calAdd); if(state.todayRecord) openEditToday(); render(); window.scrollTo(0,0); });
   document.querySelectorAll('[data-cal-pick]').forEach(el=> el.onclick = ()=>{ state.calSelDay = el.dataset.calPick; render(); });
   document.querySelectorAll('[data-cal-day]').forEach(el=> el.onclick = async ()=>{ state.tab = 'today'; await selectScheduleDate(el.dataset.calDay); window.scrollTo(0,0); });
   document.querySelectorAll('[data-cal-import]').forEach(b=> b.onclick = openImportSheet);
