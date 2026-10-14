@@ -182,8 +182,9 @@
   .cchip.pri{font-weight:600;}
   .cchip.lg{display:inline-flex;align-items:center;gap:3px;margin:0;padding:3px 8px;font-size:11px;}
   .cchip .pd{color:var(--clay);font-weight:800;}
-  .cchip.done{opacity:.5;}
-  .cchip.done .sn::before,.cchip.done .fn::before{content:'✓ ';}
+  .cchip.done{background:var(--teal-soft);color:var(--teal);}
+  .past .cchip,.past .wk-chip,.past .dots,.past .cc-cell .cn{opacity:.5;}
+  .cc-cell.past .dots,.cc-cell.past .cn{opacity:.5;}
   .cchip .fn{display:none;}
   @media(min-width:700px){ .cchip .fn{display:inline;} .cchip .sn{display:none;} }
   .red{color:#c0392b;} .blue{color:#2f5fb5;}
@@ -193,7 +194,7 @@
   .wk-day .wd b{font-size:20px;}
   .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
   .wk-chip{display:flex;border-left:4px solid #D5D0C8;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
-  .wk-chip.done{opacity:.55;}
+  .wk-chip.done{background:var(--teal-soft,#dcebe7);}
   .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
   .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
   .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
@@ -1169,7 +1170,7 @@ function renderWeekView(){
     const chips = rec ? chipsFor(rec) : [];
     const wd = dt.getDay(); const hol = holidayName(ds);
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    return `<div class="wk-day ${ds===tStr?'today':''}" data-cal-day="${ds}">
+    return `<div class="wk-day ${ds===tStr?'today':''} ${ds<tStr?'past':''}" data-cal-day="${ds}">
       <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}<span class="cn">${chips.length?chips.length+'건':''}</span></div>
       ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}" style="${barStyle(c.p)}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
     </div>`;
@@ -1198,7 +1199,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     const dots = chips.slice(0,6).map(c=>{ const p = propById(c.id); const m = p && ownerStyle(p,false).match(/solid (#[0-9A-Fa-f]+)/); return `<i style="${m?'background:'+m[1]+';':''}"></i>`; }).join('');
-    cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
+    cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
       <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<div class="dots">${dots}</div><span class="cn">${chips.length}${chips.filter(c=>c.pri).length?` <b style="color:var(--clay);">●${chips.filter(c=>c.pri).length}</b>`:''}</span>`:''}</div>`;
   }
   const rec = state.monthRecords[pick];
@@ -1207,9 +1208,10 @@ function renderCompactCal(head, year, month, first, days, tStr){
   const list = chips.length ? chips.map(c=>{ const p = propById(c.id);
       return `<div class="wk-chip ${c.done?'done':''}" style="background:var(--surface);border:1px solid var(--paper-line);${p?ownerStyle(p,true):''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`; }).join('')
     : '<div class="wk-empty">일정 없음</div>';
+  const pastCls = pick < todayStr() ? 'past' : '';
   return head + `<div class="mc-grid">${cells}</div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span></div>
-    <div class="cc-panel"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳</b>${chips.length?`<button data-cal-day="${pick}">자세히 ▶</button>`:''}${isAdmin()?`<button data-cal-add="${pick}">+ 일정 추가</button>`:''}</div>${list}</div>`;
+    <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳</b>${chips.length?`<button data-cal-day="${pick}">자세히 ▶</button>`:''}${isAdmin()?`<button data-cal-add="${pick}">+ 일정 추가</button>`:''}</div>${list}</div>`;
 }
 function renderCalendarTab(){
   if(!cloud) state.monthRecords = readLocalMonth();
@@ -1239,7 +1241,7 @@ function renderCalendarTab(){
       const wd = new Date(year,month,d).getDay();
       const cls = (wd===0 || holidayName(ds)) ? 'red' : (wd===6 ? 'blue' : '');
       const chips = chipsFor(rec);
-      rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
+      rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''} ${ds<todayStr()?'past':''}" data-cal-day="${ds}">
         <div class="d"><span class="${cls}">${month+1}/${d} (${DAY_NAMES[wd]}) ${holidayName(ds)?'· '+holidayName(ds):''}</span><span style="font-size:12px;color:var(--ink-soft);">${chips.length}건</span></div>
         <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
     }
@@ -1259,13 +1261,13 @@ function renderCalendarTab(){
     const rec = inMonth ? state.monthRecords[ds] : null;
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
+    cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
       ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> <span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">✓ 완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
