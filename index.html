@@ -1420,15 +1420,33 @@ const OWNER_COLORS = {
   '이미선': {bg:'#E2EFDA', bar:'#A9D18E'},
   '조기환': {bg:'#FFF2CC', bar:'#FFD966'},  // 동교스테이 (이미선 연두와 구분되게 노랑)
 };
-// 대표가 비어 있는 숙소는 전화번호로 색 지정
-const PHONE_COLORS = {
-  '01091409067': {bg:'#E4DCF4', bar:'#9B86D6'},  // 창천동 잇다
-};
+// 대표가 비어 있는 숙소: 전화번호 또는 이름으로 색 지정 (순서 = 숙소 탭 정렬 순서)
+const GROUP_COLORS = [
+  {key:'잇다',   bg:'#E4DCF4', bar:'#9B86D6', phone:'01091409067', name:/^창천(동)?\s*잇다/},
+  {key:'망원3룸', bg:'#D5F0EE', bar:'#4DB6AC', name:/^망원(동)?\s*3룸/},
+];
+function groupOf(p){
+  const ph = String(p.phone||'').replace(/\D/g,''), nm = String(p.name||'').trim();
+  return GROUP_COLORS.findIndex(g => (g.phone && g.phone===ph) || (g.name && g.name.test(nm)));
+}
 function ownerStyle(p, tint){
-  let c = p && OWNER_COLORS[String(p.owner||'').trim()];
-  if(!c && p && !String(p.owner||'').trim()) c = PHONE_COLORS[String(p.phone||'').replace(/\D/g,'')];
+  if(!p) return '';
+  let c = OWNER_COLORS[String(p.owner||'').trim()];
+  if(!c){ const gi = groupOf(p); if(gi>=0) c = GROUP_COLORS[gi]; }
   if(!c) return '';
   return `border-left:8px solid ${c.bar};` + (tint ? `background:${c.bg};` : '');
+}
+// 숙소 탭 정렬: 색(대표)별로 묶고, 그 안에서 이름순. 색 없는 건 맨 아래(대표/전화번호별)
+function colorRank(p){
+  const o = String(p.owner||'').trim();
+  const keys = Object.keys(OWNER_COLORS);
+  if(o && keys.includes(o)) return [keys.indexOf(o), ''];
+  if(groupOf(p)>=0) return [keys.length+groupOf(p), ''];
+  return [keys.length+GROUP_COLORS.length, o || String(p.phone||'').replace(/\D/g,'') || '~'];
+}
+function cmpByColor(a,b){
+  const ra = colorRank(a), rb = colorRank(b);
+  return (ra[0]-rb[0]) || ra[1].localeCompare(rb[1],'ko') || String(a.name||'').localeCompare(String(b.name||''),'ko');
 }
 function suggestPropName(old, all, addr){
   if(/^창천/.test(String(old||'').trim()) && addr && unitFromAddr(addr)) { const rm = /투룸/.test(old) ? '2룸' : ((String(old).match(/([123])\s*룸/)||[])[1] ? String(old).match(/([123])\s*룸/)[1]+'룸' : '2룸'); return ((/잇다/.test(old) || /신촌로\s*3나?길\s*8-10/.test(addr)) ? '창천잇다 ' : '창천 ')+rm+' '+unitFromAddr(addr); }
@@ -1943,9 +1961,11 @@ function renderClockReadOnly(){
 }
 
 function renderClockCard(){
-  const entry = getWorkEntry(todayStr()) || { clockIn: null, clockOut: null };
+  const cd = state.selectedDate || todayStr();
+  const entry = getWorkEntry(cd) || { clockIn: null, clockOut: null };
   return `
     <div class="clock-card">
+      ${cd!==todayStr() ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">📝 ${parseInt(cd.slice(5,7),10)}/${parseInt(cd.slice(8,10),10)} 기록 (지난 날짜도 수정 가능)</div>` : ''}
       <div class="clock-row">
         <div class="clock-item">
           <span class="clock-label">출근</span>
@@ -1970,19 +1990,20 @@ function renderClockCard(){
                 : `<span class="clock-dim">출근 후 가능</span>`)}
         </div>
       </div>
-      ${entry.clockIn && entry.clockOut ? `<div class="clock-duration">오늘 근무 시간: ${formatDuration(entry.clockIn, entry.clockOut)}</div>` : ''}
+      ${entry.clockIn && entry.clockOut ? `<div class="clock-duration">${state.selectedDate===todayStr()?'오늘':'이날'} 근무 시간: ${formatDuration(entry.clockIn, entry.clockOut)}</div>` : ''}
     </div>
   `;
 }
 
 async function stepClockTime(field, delta){
-  const entry = getWorkEntry(todayStr()) || { clockIn: null, clockOut: null };
+  const cdate = state.selectedDate || todayStr();
+  const entry = getWorkEntry(cdate) || { clockIn: null, clockOut: null };
   const cur = entry[field] || nowHHMM();
   const [h, m] = cur.split(':').map(Number);
   let total = ((h*60 + m + delta) % 1440 + 1440) % 1440;
   const nh = Math.floor(total/60), nm = total%60;
   const newVal = `${String(nh).padStart(2,'0')}:${String(nm).padStart(2,'0')}`;
-  await upsertWorkEntry(todayStr(), { [field]: newVal });
+  await upsertWorkEntry(cdate, { [field]: newVal });
   render();
 }
 
@@ -2002,7 +2023,7 @@ function renderPickerBody(mode){
   const isTodaySelected = state.selectedDate === todayStr();
   return `
     ${renderScheduleCalendar()}
-    ${(isEdit || COMPANY_MODE) ? '' : (isTodaySelected ? renderClockCard() : renderClockReadOnly())}
+    ${(isEdit || COMPANY_MODE) ? '' : (state.selectedDate <= todayStr() ? renderClockCard() : renderClockReadOnly())}
     <div class="picker-intro" style="margin-bottom:0;">${isEdit ? `➕ <b>${dateLabel} 업체 추가/제외</b> — 이미 체크한 세탁물·컨디션 진행 상황은 그대로 남아.` : `📋 <b>${dateLabel}</b> 일정을 만들어줘`}</div>
     <div class="paste-box">
       <label>일정·순서 메시지 붙여넣기 (선택)</label>
@@ -2147,7 +2168,7 @@ function renderScheduleCards(){
   }).join('');
 
   return `
-    ${COMPANY_MODE ? '' : (state.selectedDate === todayStr() ? renderClockCard() : renderClockReadOnly())}
+    ${COMPANY_MODE ? '' : (state.selectedDate <= todayStr() ? renderClockCard() : renderClockReadOnly())}
     <div class="summary">
       <div class="date">${renderDateLabel()}</div>
       <div class="count-row">
@@ -2180,7 +2201,7 @@ function renderAll(){
   const q = state.search.trim().toLowerCase();
   const list = state.properties.filter(p =>
     !q || p.name.toLowerCase().includes(q) || (p.owner||'').toLowerCase().includes(q) || (p.room||'').toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q)
-  );
+  ).slice().sort(cmpByColor);
   const cards = list.map(p=>{
     const open = state.openIds.has(p.id);
     return `
@@ -2717,15 +2738,16 @@ function attachHandlers(){
   document.querySelectorAll('[data-clock-action]').forEach(el=>{
     el.onclick = async ()=>{
       const action = el.dataset.clockAction;
-      if(action === 'in') await upsertWorkEntry(todayStr(), { clockIn: '10:00' });
-      else await upsertWorkEntry(todayStr(), { clockOut: '16:00' });
+      const cdate = state.selectedDate || todayStr();
+      if(action === 'in') await upsertWorkEntry(cdate, { clockIn: '10:00' });
+      else await upsertWorkEntry(cdate, { clockOut: '16:00' });
       render();
     };
   });
   document.querySelectorAll('[data-clock-edit]').forEach(el=>{
     el.onchange = async ()=>{
       const field = el.dataset.clockEdit === 'in' ? 'clockIn' : 'clockOut';
-      await upsertWorkEntry(todayStr(), { [field]: el.value });
+      await upsertWorkEntry(state.selectedDate || todayStr(), { [field]: el.value });
       render();
     };
   });
