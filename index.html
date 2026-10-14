@@ -180,6 +180,7 @@
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
   .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#F3D2C5;color:#5a2a1c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cchip.pri{font-weight:600;}
+  .cchip.lg{display:inline-flex;align-items:center;gap:3px;margin:0;padding:3px 8px;font-size:11px;}
   .cchip .pd{color:var(--clay);font-weight:800;}
   .cchip.done{background:var(--teal-soft);color:var(--teal);}
   .cchip .fn{display:none;}
@@ -378,6 +379,7 @@
     position:fixed;inset:0;background:rgba(20,24,18,0.45);
     display:flex;align-items:flex-end;justify-content:center;z-index:100;
   }
+  @media(min-width:700px){ .overlay{align-items:center;} .sheet{border-radius:16px !important;max-height:90vh;overflow:auto;} }
   .sheet{
     background:var(--surface);width:100%;max-width:520px;
     border-radius:16px 16px 0 0;padding:18px 16px 22px 16px;
@@ -1138,7 +1140,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
       return `<div class="wk-chip ${c.done?'done':''}" style="${c.done?'':'background:var(--surface);border:1px solid var(--paper-line);'}${p?ownerStyle(p,false):''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`; }).join('')
     : '<div class="wk-empty">일정 없음</div>';
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;"><b style="color:var(--clay);">●</b> 당일체크인</div>
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span></div>
     <div class="cc-panel"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳</b>${chips.length?`<button data-cal-day="${pick}">자세히 ▶</button>`:''}${isAdmin()?`<button data-cal-add="${pick}">+ 일정 추가</button>`:''}</div>${list}</div>`;
 }
 function renderCalendarTab(){
@@ -1171,7 +1173,7 @@ function renderCalendarTab(){
       const chips = chipsFor(rec);
       rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
         <div class="d"><span class="${cls}">${month+1}/${d} (${DAY_NAMES[wd]}) ${holidayName(ds)?'· '+holidayName(ds):''}</span><span style="font-size:12px;color:var(--ink-soft);">${chips.length}건</span></div>
-        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}"><b class="pd" style="${c.pri?'':'visibility:hidden;'}">●</b> ${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
+        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
     }
     return head + (rows.length ? rows.join('') : '<div class="empty">이 달에는 등록된 일정이 없어.</div>');
   }
@@ -1191,11 +1193,11 @@ function renderCalendarTab(){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
-      ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'visibility:hidden;'}">●</b> <span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
+      ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> <span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;"><b class="pd" style="color:var(--clay);">●</b> 당일체크인 · <span class="cchip done" style="display:inline-block;">완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
@@ -2464,7 +2466,7 @@ function openEditSheet(prop){
       <h2>${e.id ? '업체 정보 수정' : '새 업체 추가'}</h2>
       <div class="field"><label>상호명</label><input id="f_name" value="${esc(e.name)}"></div>
       <div class="field"><label>담당자(대표)</label><input id="f_owner" value="${esc(e.owner)}"></div>
-      <div class="field"><label>카톡방 이름</label><input id="f_room" value="${esc(e.room||'')}" placeholder="예: 용강동2룸 업무방"></div>
+      <div class="field"><label>카톡방 이름</label><input id="f_room" value="${esc(e.room||'')}" placeholder="예: 용강동2룸"></div>
       <div class="field"><label>연락처</label><input id="f_phone" value="${esc(e.phone)}"></div>
       <div class="field"><label>주소</label><input id="f_address" value="${esc(e.address)}"></div>
       <div class="field"><label>비밀번호</label><input id="f_password" value="${esc(e.password)}"></div>
