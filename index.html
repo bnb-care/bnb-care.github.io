@@ -182,7 +182,8 @@
   .cchip.pri{font-weight:600;}
   .cchip.lg{display:inline-flex;align-items:center;gap:3px;margin:0;padding:3px 8px;font-size:11px;}
   .cchip .pd{color:var(--clay);font-weight:800;}
-  .cchip.done{background:var(--teal-soft);color:var(--teal);}
+  .cchip.done{opacity:.5;}
+  .cchip.done .sn::before,.cchip.done .fn::before{content:'✓ ';}
   .cchip .fn{display:none;}
   @media(min-width:700px){ .cchip .fn{display:inline;} .cchip .sn{display:none;} }
   .red{color:#c0392b;} .blue{color:#2f5fb5;}
@@ -192,7 +193,7 @@
   .wk-day .wd b{font-size:20px;}
   .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
   .wk-chip{display:flex;border-left:4px solid #D5D0C8;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
-  .wk-chip.done{background:var(--teal-soft,#dcebe7);}
+  .wk-chip.done{opacity:.55;}
   .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
   .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
   .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
@@ -200,6 +201,11 @@
   .cc-cell.out{background:#F7F8F4;} .cc-cell.out .n{opacity:.35;}
   .cc-cell .n{font-size:13px;font-weight:700;min-width:22px;text-align:center;border-radius:11px;padding:1px 0;}
   .cc-cell.today .n{background:var(--teal);color:#fff;}
+  .cal-cell.today{background:#E3F0FB;box-shadow:inset 0 0 0 2px #2F6FB0;}
+  .cal-cell.today .dn b{background:#2F6FB0;}
+  .cc-cell.today{background:#E3F0FB;box-shadow:inset 0 0 0 2px #2F6FB0;}
+  .cc-cell.today .n{background:#2F6FB0;}
+  .cal-cell.today.sel,.cc-cell.today.sel{outline-color:#2F6FB0;}
   .cc-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;background:#F1F7F5;}
   .cc-cell .dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:100%;padding:0 2px;}
   .cc-cell .dots i{width:7px;height:7px;border-radius:50%;background:#bbb;display:block;}
@@ -1259,7 +1265,7 @@ function renderCalendarTab(){
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">✓ 완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
