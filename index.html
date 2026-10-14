@@ -159,6 +159,15 @@
   .cal-head .ttl{font-size:18px;font-weight:700;flex:1;min-width:110px;}
   .cal-head button{border:1px solid var(--paper-line);background:var(--surface);border-radius:8px;padding:7px 11px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--sans);color:var(--ink);}
   .cal-head button.on{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .cal-head .navg{display:flex;gap:4px;align-items:center;}
+  .cal-head .navg button{padding:7px 10px;}
+  .cal-head .seg{display:flex;border:1px solid var(--paper-line);border-radius:8px;overflow:hidden;background:var(--surface);}
+  .cal-head .seg button{border:none;border-radius:0;padding:7px 12px;background:transparent;}
+  .cal-head .seg button + button{border-left:1px solid var(--paper-line);}
+  .cal-head .seg button.on{background:var(--ink);color:#fff;}
+  .cal-head .imp{padding:7px 9px;}
+  .cal-head .ttl{order:0;} .cal-head .navg{order:1;} .cal-head .seg{order:2;} .cal-head .imp{order:3;}
+  @media (max-width:560px){ .cal-head .ttl{flex-basis:100%;} .cal-head .seg{flex:1;} .cal-head .seg button{flex:1;} }
   .mc-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:var(--paper-line);border:1px solid var(--paper-line);border-radius:8px;overflow:hidden;}
   .cal-dow{background:#F4F5F0;text-align:center;font-size:12px;font-weight:700;padding:6px 0;}
   .cal-cell{background:var(--surface);min-height:84px;padding:3px 2px 4px;cursor:pointer;overflow:hidden;}
@@ -185,6 +194,18 @@
   .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
   .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
   .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
+  .cc-cell{background:var(--surface);min-height:58px;padding:4px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;}
+  .cc-cell.out{background:#F7F8F4;} .cc-cell.out .n{opacity:.35;}
+  .cc-cell .n{font-size:13px;font-weight:700;min-width:22px;text-align:center;border-radius:11px;padding:1px 0;}
+  .cc-cell.today .n{background:var(--teal);color:#fff;}
+  .cc-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;background:#F1F7F5;}
+  .cc-cell .dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:100%;padding:0 2px;}
+  .cc-cell .dots i{width:7px;height:7px;border-radius:50%;background:#bbb;display:block;}
+  .cc-cell .cn{font-size:10px;font-weight:700;color:var(--ink-soft);line-height:1;}
+  .cc-panel{margin-top:12px;}
+  .cc-panel .ph{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .cc-panel .ph b{font-size:16px;flex:1;}
+  .cc-panel .ph button{border:1px solid var(--paper-line);background:var(--surface);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--sans);color:var(--ink);}
   .cal-list-row{background:var(--surface);border:1px solid var(--paper-line);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;}
   .cal-list-row.sel{outline:2px solid var(--teal);}
   .cal-list-row .d{font-weight:700;font-size:14px;margin-bottom:6px;display:flex;justify-content:space-between;}
@@ -501,6 +522,7 @@ let state = {
   staff: [],
   calMonth: (()=>{ const d=new Date(); return { year:d.getFullYear(), month:d.getMonth() }; })(),
   calView: 'grid',
+  calSelDay: null,
   monthRecords: {},
   calWeekStart: null,
   photos: {}, // {propId:[{id,ts,by,thumb}]} 선택한 날짜 기준
@@ -1066,14 +1088,10 @@ function renderWeekView(){
   const days = []; for(let i=0;i<7;i++){ const dt = new Date(y, m-1, d+i); days.push({ dt, ds: ymd(dt.getFullYear(), dt.getMonth(), dt.getDate()) }); }
   const a = days[0].dt, b = days[6].dt;
   const head = `<div class="cal-head">
-      <button data-cal-wk="-1">◀</button>
       <div class="ttl">${a.getMonth()+1}/${a.getDate()} ~ ${b.getMonth()+1}/${b.getDate()}</div>
-      <button data-cal-wk="1">▶</button>
-      <button data-cal-wk="today">이번 주</button>
-      <button data-cal-view="grid">달력</button>
-      <button data-cal-view="week" class="on">주간</button>
-      <button data-cal-view="list">목록</button>
-      ${isAdmin()?'<button data-cal-import="1">📥 가져오기</button>':''}
+      <div class="navg"><button data-cal-wk="-1">◀</button><button data-cal-wk="today">이번 주</button><button data-cal-wk="1">▶</button></div>
+      <div class="seg"><button data-cal-view="grid">달력</button><button data-cal-view="week" class="on">주간</button><button data-cal-view="list">목록</button></div>
+      ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}
     </div>`;
   const body = days.map(({dt,ds})=>{
     const rec = state.monthRecords[ds];
@@ -1086,6 +1104,40 @@ function renderWeekView(){
     </div>`;
   }).join('');
   return head + body;
+}
+function isNarrowCal(){ try{ return window.matchMedia('(max-width:699px)').matches; }catch(e){ return false; } }
+function calPickedDay(year, month){
+  const pre = year+'-'+pad2(month+1)+'-';
+  if(state.calSelDay && state.calSelDay.startsWith(pre)) return state.calSelDay;
+  if(state.selectedDate && state.selectedDate.startsWith(pre)) return state.selectedDate;
+  const t = todayStr(); if(t.startsWith(pre)) return t;
+  return pre+'01';
+}
+function renderCompactCal(head, year, month, first, days, tStr){
+  const pick = calPickedDay(year, month);
+  let cells = '';
+  ['일','월','화','수','목','금','토'].forEach((n,i)=>{ cells += `<div class="cal-dow ${i===0?'red':i===6?'blue':''}">${n}</div>`; });
+  const startDate = new Date(year, month, 1 - first);
+  const rowsNeeded = Math.ceil((first + days) / 7);
+  for(let i=0; i<rowsNeeded*7; i++){
+    const dt = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
+    const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    const inMonth = dt.getMonth() === month, wd = dt.getDay(), hol = holidayName(ds);
+    const rec = inMonth ? state.monthRecords[ds] : null;
+    const chips = rec ? chipsFor(rec) : [];
+    const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
+    const dots = chips.slice(0,6).map(c=>{ const p = propById(c.id); const m = p && ownerStyle(p,false).match(/solid (#[0-9A-Fa-f]+)/); return `<i style="${m?'background:'+m[1]:''}"></i>`; }).join('');
+    cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
+      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<div class="dots">${dots}</div><span class="cn">${chips.length}</span>`:''}</div>`;
+  }
+  const rec = state.monthRecords[pick];
+  const chips = rec ? chipsFor(rec) : [];
+  const [py,pm,pd] = pick.split('-').map(Number); const pw = new Date(py,pm-1,pd).getDay(); const hn = holidayName(pick);
+  const list = chips.length ? chips.map(c=>{ const p = propById(c.id);
+      return `<div class="wk-chip ${c.done?'done':''}" style="${c.done?'':'background:var(--surface);border:1px solid var(--paper-line);'}${p?ownerStyle(p,false):''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:var(--clay);color:#fff;">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}</div>`; }).join('')
+    : '<div class="wk-empty">일정 없음</div>';
+  return head + `<div class="mc-grid">${cells}</div>
+    <div class="cc-panel"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳</b><button data-cal-day="${pick}">자세히 ▶</button></div>${list}</div>`;
 }
 function renderCalendarTab(){
   if(!cloud) state.monthRecords = readLocalMonth();
@@ -1100,14 +1152,10 @@ function renderCalendarTab(){
   mKeys.forEach(k=>{ total += (state.monthRecords[k].propertyIds||[]).length; });
   const head = `
     <div class="cal-head">
-      <button data-cal-nav="-1">◀</button>
       <div class="ttl">${year}년 ${month+1}월</div>
-      <button data-cal-nav="1">▶</button>
-      <button data-cal-today="1">오늘</button>
-      <button data-cal-view="grid" class="${state.calView==='grid'?'on':''}">달력</button>
-      <button data-cal-view="week" class="${state.calView==='week'?'on':''}">주간</button>
-      <button data-cal-view="list" class="${state.calView==='list'?'on':''}">목록</button>
-      ${isAdmin()?'<button data-cal-import="1">📥 가져오기</button>':''}
+      <div class="navg"><button data-cal-nav="-1">◀</button><button data-cal-today="1">오늘</button><button data-cal-nav="1">▶</button></div>
+      <div class="seg"><button data-cal-view="grid" class="${state.calView==='grid'?'on':''}">달력</button><button data-cal-view="week" class="${state.calView==='week'?'on':''}">주간</button><button data-cal-view="list" class="${state.calView==='list'?'on':''}">목록</button></div>
+      ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}
     </div>
     <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 10px;">이 달 일정 ${mKeys.length}일 · 총 ${total}건 · 날짜를 누르면 그날 일정으로 이동</div>`;
   if(state.calView === 'list'){
@@ -1125,6 +1173,7 @@ function renderCalendarTab(){
     }
     return head + (rows.length ? rows.join('') : '<div class="empty">이 달에는 등록된 일정이 없어.</div>');
   }
+  if(state.calView === 'grid' && isNarrowCal()) return renderCompactCal(head, year, month, first, days, tStr);
   let cells = '';
   ['일','월','화','수','목','금','토'].forEach((n,i)=>{ cells += `<div class="cal-dow ${i===0?'red':i===6?'blue':''}">${n}</div>`; });
   const startDate = new Date(year, month, 1 - first);
@@ -1148,8 +1197,9 @@ function renderCalendarTab(){
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
-  document.querySelectorAll('[data-cal-today]').forEach(b=> b.onclick = ()=>{ const d = new Date(); state.calMonth = { year:d.getFullYear(), month:d.getMonth() }; watchMonth(); render(); });
+  document.querySelectorAll('[data-cal-today]').forEach(b=> b.onclick = ()=>{ const d = new Date(); state.calMonth = { year:d.getFullYear(), month:d.getMonth() }; state.calSelDay = todayStr(); watchMonth(); render(); });
   document.querySelectorAll('[data-cal-view]').forEach(b=> b.onclick = ()=>{ state.calView = b.dataset.calView; try{ localStorage.setItem('pref:calView', state.calView); }catch(e){} render(); });
+  document.querySelectorAll('[data-cal-pick]').forEach(el=> el.onclick = ()=>{ state.calSelDay = el.dataset.calPick; render(); });
   document.querySelectorAll('[data-cal-day]').forEach(el=> el.onclick = async ()=>{ state.tab = 'today'; await selectScheduleDate(el.dataset.calDay); window.scrollTo(0,0); });
   document.querySelectorAll('[data-cal-import]').forEach(b=> b.onclick = openImportSheet);
   document.querySelectorAll('[data-cal-wk]').forEach(b=> b.onclick = ()=>{
@@ -3224,6 +3274,7 @@ async function startApp(){
     if(!isAdmin() && state.tab !== 'today' && state.tab !== 'cal') state.tab = 'today';
   }
   state.selectedDate = todayStr();
+  try{ let _nw = isNarrowCal(); window.addEventListener('resize', ()=>{ const n = isNarrowCal(); if(n!==_nw){ _nw = n; if(state.tab==='cal') render(); } }); }catch(e){}
   try{ const v = localStorage.getItem('pref:calView'); if(v) state.calView = v; }catch(e){}
   await loadProperties();
   await loadStaff();
