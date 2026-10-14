@@ -553,6 +553,56 @@ async function saveProperties(){
   try{ await window.storage.set(KEY_PROPS, JSON.stringify(state.properties), false); }catch(e){}
 }
 let lastTodayRaw = null;
+// 비번이 '앞 손님 체크인 날짜'인 숙소(망원2룸): 바로 앞 일정 날짜를 찾아 MMDD* 로 제안
+const _prevDateCache = {};
+async function findPrevScheduleDate(pid, ds){
+  const key = pid+'@'+ds+'@'+(lastTodayRaw?lastTodayRaw.length:0);
+  if(key in _prevDateCache) return _prevDateCache[key];
+  const [y,m,d] = ds.split('-').map(Number);
+  let found = null;
+  for(let i=1; i<=62 && !found; i++){
+    const dt = new Date(y, m-1, d-i);
+    const k = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    let res = null; try{ res = await window.storage.get('today:'+k, false); }catch(e){}
+    if(!res || !res.value) continue;
+    try{ const rec = JSON.parse(res.value); if((rec.propertyIds||[]).includes(pid)) found = k; }catch(e){}
+  }
+  _prevDateCache[key] = found; return found;
+}
+async function fillPassSuggestions(){
+  const els = document.querySelectorAll('[data-pass-suggest]');
+  for(const el of els){
+    const pid = el.dataset.passSuggest;
+    el.textContent = '앞 일정 찾는 중…';
+    const prev = await findPrevScheduleDate(pid, state.selectedDate);
+    if(!document.body.contains(el)) continue;
+    if(!prev){ el.textContent = '앞 일정(최근 2달)을 못 찾았어. 직접 입력해줘.'; continue; }
+    const code = prev.slice(5,7)+prev.slice(8,10)+'*';
+    const cur = ((state.todayRecord.dayPass||{})[pid]||'').trim();
+    const label = `앞 일정 ${Number(prev.slice(5,7))}/${Number(prev.slice(8,10))} → ${code}`;
+    el.innerHTML = cur===code ? `✅ ${esc(label)} (입력됨)` : `<button type="button" style="border:1px solid var(--paper-line);background:var(--surface);border-radius:8px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer;color:var(--ink);">${esc(label)} 입력</button> <span>확인하고 눌러줘</span>`;
+    const btn = el.querySelector('button');
+    if(btn) btn.onclick = async ()=>{ const r = state.todayRecord; r.dayPass = r.dayPass||{}; r.dayPass[pid] = code; await saveTodayRecord(); render(); };
+  }
+}
+// 지난 날짜의 '오늘 비번'은 서버에 남기지 않고 지움 (최근 14일 점검)
+async function cleanupOldDayPass(){
+  try{
+    if(!isAdmin()) return;
+    const now = new Date();
+    for(let i=1; i<=14; i++){
+      const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate()-i);
+      const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+      let res = null; try{ res = await window.storage.get('today:'+ds, false); }catch(e){}
+      if(!res || !res.value) continue;
+      let rec = null; try{ rec = JSON.parse(res.value); }catch(e){ continue; }
+      if(rec && rec.dayPass && Object.keys(rec.dayPass).length){
+        delete rec.dayPass;
+        try{ await window.storage.set('today:'+ds, JSON.stringify(rec), false); }catch(e){}
+      }
+    }
+  }catch(e){}
+}
 async function loadTodayRecord(){
   try{
     const res = await window.storage.get(todayKey(), false);
@@ -705,7 +755,7 @@ function getSent(){ try{ return JSON.parse(localStorage.getItem(sentKey())||'{}'
 function staffSig(stId){
   const r = state.todayRecord; if(!r) return '';
   const ids = staffAssignedProps(stId).slice().sort();
-  return ids.map(id=> id+':'+(((r.dayNotes||{})[id])||'')+((r.priorityIds||[]).includes(id)?'*':'')).join('|');
+  return ids.map(id=> id+':'+(((r.dayNotes||{})[id])||'')+((r.priorityIds||[]).includes(id)?'*':'')+'#'+(((r.dayPass||{})[id])||'')).join('|');
 }
 function markSent(stId){ const m = getSent(); m[stId] = {t:Date.now(), sig:staffSig(stId)}; try{ localStorage.setItem(sentKey(), JSON.stringify(m)); }catch(e){} }
 // none / ok / changed
@@ -783,6 +833,14 @@ function openNoticeSheet(){
   document.body.appendChild(root);
   draw();
 }
+function buildPwOnlyText(st){
+  const r = state.todayRecord; const ids = staffAssignedProps(st.id);
+  const rows = ids.map((id,i)=>({id,i})).filter(x=> ((r.dayPass||{})[x.id]||'').trim());
+  if(!rows.length) return '입력된 오늘 비번이 없어. 오늘 탭 숙소 카드에서 먼저 입력해줘.';
+  const lines = [`${renderDateLabel()} ${st.name}님 비번 안내`, ''];
+  rows.forEach(x=>{ const p = propById(x.id); lines.push(`${x.i+1}. ${p?p.name:''} | ${r.dayPass[x.id].trim()}`); });
+  return lines.join('\n');
+}
 function buildPersonalText(st, withPw, withAddr, greet){
   if(withAddr===undefined) withAddr = true;
   const r = state.todayRecord;
@@ -797,7 +855,8 @@ function buildPersonalText(st, withPw, withAddr, greet){
     const isPri = (r.priorityIds||[]).includes(id) && !/당일/.test(note||'');
     lines.push('');
     if(i>0){ lines.push(bar); lines.push(''); }
-    const pwTxt = /매번\s*(바뀜|바뀌|변경)/.test(p.password||'') ? '비번 추후 전달' : (p.password||'');
+    const dayPw = ((r.dayPass||{})[id]||'').trim();
+    const pwTxt = dayPw ? dayPw : (/매번\s*(바뀜|바뀌|변경)/.test(p.password||'') ? '비번 추후 전달' : (p.password||''));
     lines.push(`${i+1}. ${p.name}${(withPw && pwTxt) ? ' | '+pwTxt : ''}`);
     if((withAddr && p.address) || note || isPri) lines.push('');
     if(withAddr && p.address) lines.push(`- ${p.address}`);
@@ -816,6 +875,7 @@ function openPersonalSheet(stId){
   root.innerHTML = `
     <div class="sheet">
       <h2>✉️ ${esc(st.name)}님께 보내기</h2>
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="pm_pwonly">비번만 따로 보내기 (오늘 비번 입력한 곳)</label>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="pm_pw" ${withPw?'checked':''}>도어락 비밀번호 포함</label>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="pm_addr" ${withAddr?'checked':''}>주소 포함</label>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin-bottom:8px;"><input type="checkbox" id="pm_greet_on" ${withGreet?'checked':''}>끝인사 포함</label>
@@ -829,8 +889,9 @@ function openPersonalSheet(stId){
     </div>`;
   document.body.appendChild(root);
   const ta = document.getElementById('pm_text');
-  const refresh = ()=>{ ta.value = buildPersonalText(st, document.getElementById('pm_pw').checked, document.getElementById('pm_addr').checked, document.getElementById('pm_greet_on').checked ? document.getElementById('pm_greet').value.trim() : ''); };
+  const refresh = ()=>{ if(document.getElementById('pm_pwonly').checked){ ta.value = buildPwOnlyText(st); return; } ta.value = buildPersonalText(st, document.getElementById('pm_pw').checked, document.getElementById('pm_addr').checked, document.getElementById('pm_greet_on').checked ? document.getElementById('pm_greet').value.trim() : ''); };
   refresh();
+  document.getElementById('pm_pwonly').onchange = refresh;
   document.getElementById('pm_pw').onchange = (e)=>{ try{ localStorage.setItem('pref:msgPw', e.target.checked?'1':'0'); }catch(_){} refresh(); };
   document.getElementById('pm_addr').onchange = (e)=>{ try{ localStorage.setItem('pref:msgAddr', e.target.checked?'1':'0'); }catch(_){} refresh(); };
   document.getElementById('pm_greet_on').onchange = (e)=>{ try{ localStorage.setItem('pref:msgGreetOn', e.target.checked?'1':'0'); }catch(_){} refresh(); };
@@ -1236,6 +1297,7 @@ async function moveProperty(id){
   if((rec.priorityIds||[]).includes(id) && !tgt.priorityIds.includes(id)) tgt.priorityIds.push(id);
   if((rec.assign||{})[id]){ tgt.assign = tgt.assign||{}; tgt.assign[id] = rec.assign[id]; }
   if((rec.dayNotes||{})[id]){ tgt.dayNotes = tgt.dayNotes||{}; tgt.dayNotes[id] = rec.dayNotes[id]; }
+  // 오늘 비번은 그날 전용이라 다른 날짜로 옮기지 않음
   try{ await window.storage.set('today:'+ds, JSON.stringify(tgt), false); }catch(e){ alert('저장에 실패했어.'); return; }
   // 저장 직후 실시간 반영으로 state.todayRecord가 새 객체로 바뀔 수 있어서 다시 가져옴
   const cur = state.todayRecord || rec;
@@ -1244,6 +1306,7 @@ async function moveProperty(id){
   cur.priorityIds = (cur.priorityIds||[]).filter(x=>x!==id);
   if(cur.assign) delete cur.assign[id];
   if(cur.dayNotes) delete cur.dayNotes[id];
+  if(cur.dayPass) delete cur.dayPass[id];
   state.todayRecord = cur;
   await saveTodayRecord();
   render();
@@ -1323,17 +1386,43 @@ function openImportSheet(){
     const pr = propById(pid);
     const exists = {};
     for(const r of rows){ try{ const x = await window.storage.get('today:'+r.ds, false); if(x && x.value){ const rec = JSON.parse(x.value); exists[r.ds] = (rec.propertyIds||[]).includes(pid); } }catch(e){} }
+    // 문자에 없는데 앱에는 있는 날짜 = 취소된 일정 후보 (오늘 ~ 문자의 마지막 날짜 사이만 확인)
+    const pasted = new Set(rows.map(r=>r.ds));
+    const maxDs = rows.map(r=>r.ds).sort().slice(-1)[0];
+    const cancels = [];
+    {
+      const t0 = todayStr(); const [ty,tm,td] = t0.split('-').map(Number);
+      for(let i=0; i<=150; i++){
+        const dt = new Date(ty, tm-1, td+i); const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
+        if(ds > maxDs) break;
+        if(pasted.has(ds)) continue;
+        let x = null; try{ x = await window.storage.get('today:'+ds, false); }catch(e){}
+        if(!x || !x.value) continue;
+        try{ const rec = JSON.parse(x.value);
+          if((rec.propertyIds||[]).includes(pid)){
+            const tasks = (rec.tasks||{})[pid]||[]; const st = staffById((rec.assign||{})[pid]);
+            cancels.push({ ds, worker: st?st.name:'', hasDone: tasks.some(t=>t.done) });
+          } }catch(e){}
+      }
+    }
+    const lab = (ds)=> `${Number(ds.slice(5,7))}/${Number(ds.slice(8))}`;
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
       <h2>${esc(pr.name)} 일정 확인</h2>
-      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">체크한 날짜만 등록돼. 이미 등록된 날짜는 건너뛰어.</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;"><b>추가</b>: 체크한 날짜만 등록돼. 이미 등록된 날짜는 건너뛰어.</div>
       ${rows.map((r,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;">
         <input type="checkbox" data-kk-row="${i}" ${exists[r.ds]?'disabled':'checked'} style="margin-top:3px;">
-        <span><b>${Number(r.ds.slice(5,7))}/${Number(r.ds.slice(8))}</b>${r.guests?` · ${r.guests}명 체크인`:''}${r.gap?` · 비는 기간 ${esc(r.gap)}`:''}${r.today?' · <b style="color:var(--clay)">당일</b>':''}${exists[r.ds]?' · <span style="color:var(--ink-soft)">이미 있음</span>':''}</span></label>`).join('')}
-      <div class="sheet-actions"><button class="cancel-btn" id="kp_back">뒤로</button><button class="save-btn" id="kp_go">등록</button></div></div>`;
+        <span><b>${lab(r.ds)}</b>${r.guests?` · ${r.guests}명 체크인`:''}${r.gap?` · 비는 기간 ${esc(r.gap)}`:''}${r.today?' · <b style="color:var(--clay)">당일</b>':''}${exists[r.ds]?' · <span style="color:var(--ink-soft)">이미 있음</span>':''}</span></label>`).join('')}
+      ${cancels.length ? `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--paper-line);">
+        <div style="font-size:13px;font-weight:700;color:var(--clay);">🗑 취소된 일정 후보 ${cancels.length}건</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px;">문자에는 없는데 앱에는 있는 날짜야 (오늘 이후만). 체크한 날짜는 이 숙소가 일정에서 빠져.</div>
+        ${cancels.map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;">
+          <input type="checkbox" data-kk-del="${i}" checked style="margin-top:3px;">
+          <span><b>${lab(c.ds)}</b>${c.worker?` · 배정 ${esc(c.worker)}`:''}${c.hasDone?' · <b style="color:var(--clay)">체크 기록 있음</b>':''}</span></label>`).join('')}</div>` : ''}
+      <div class="sheet-actions"><button class="cancel-btn" id="kp_back">뒤로</button><button class="save-btn" id="kp_go">${cancels.length?'추가·삭제 반영':'등록'}</button></div></div>`;
     document.getElementById('kp_back').onclick = stepKakao;
     document.getElementById('kp_go').onclick = async ()=>{
       const btn = document.getElementById('kp_go'); btn.disabled = true; btn.textContent = '저장 중…';
-      let added = 0, failed = 0;
+      let added = 0, removed = 0, failed = 0;
       for(const el of root.querySelectorAll('[data-kk-row]')){
         if(!el.checked) continue;
         const r = rows[Number(el.dataset.kkRow)];
@@ -1350,10 +1439,29 @@ function openImportSheet(){
         if(note){ rec.dayNotes = rec.dayNotes||{}; if(!rec.dayNotes[pid]) rec.dayNotes[pid] = note; }
         try{ await window.storage.set('today:'+r.ds, JSON.stringify(rec), false); added++; }catch(err){ failed++; }
       }
+      for(const el of root.querySelectorAll('[data-kk-del]')){
+        if(!el.checked) continue;
+        const c = cancels[Number(el.dataset.kkDel)];
+        let rec = null;
+        try{ const x = await window.storage.get('today:'+c.ds, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){}
+        if(!rec || !(rec.propertyIds||[]).includes(pid)) continue;
+        rec.propertyIds = rec.propertyIds.filter(x=>x!==pid);
+        if(rec.tasks) delete rec.tasks[pid];
+        rec.priorityIds = (rec.priorityIds||[]).filter(x=>x!==pid);
+        if(rec.assign) delete rec.assign[pid];
+        if(rec.dayNotes) delete rec.dayNotes[pid];
+        if(rec.dayPass) delete rec.dayPass[pid];
+        try{
+          if(!rec.propertyIds.length && !(rec.excludedIds||[]).length){ await window.storage.delete('today:'+c.ds, false); }
+          else await window.storage.set('today:'+c.ds, JSON.stringify(rec), false);
+          removed++;
+        }catch(err){ failed++; }
+      }
       root.remove();
       if(state.selectedDate) await loadTodayRecord();
+      try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
       render();
-      alert(`${pr.name} ${added}일 등록했어.${failed?`\n저장 실패 ${failed}일`:''}`);
+      alert(`${pr.name}: ${added}일 추가${removed?`, ${removed}일 삭제`:''}했어.${failed?`\n저장 실패 ${failed}건`:''}`);
     };
   };
   const stepMap = (data)=>{
@@ -2135,6 +2243,8 @@ function renderScheduleCards(){
     const assignedSt = staffById((state.todayRecord.assign||{})[id]);
     const warns = warningsFor(assignedSt, p);
     const dayNote = (state.todayRecord.dayNotes||{})[id] || '';
+    const dayPassVal = (state.todayRecord.dayPass||{})[id] || '';
+    if(/매번/.test(p.password||'') && !dayPassVal && assignedSt) warns.push('오늘 비번 미입력 (청소담당에게 "비번 추후 전달"로 나가고 있어)');
     const assignOpts = `<option value="">작업자 미배정</option>` + state.staff.map(st=>`<option value="${st.id}" ${assignedSt&&assignedSt.id===st.id?'selected':''}>${esc(st.name)}${staffUnavailable(st)?' ('+offLabel(st)+')':''}</option>`).join('');
     const taskRows = tasks.map((t,idx)=>`
       <div class="task-item ${t.done?'done':''}">
@@ -2191,6 +2301,10 @@ function renderScheduleCards(){
             <span class="pw-icon">📝</span>
             <textarea class="day-note" data-daynote="${id}" placeholder="오늘 특이사항 (예: 5시체크인, 비번변경)">${esc(dayNote)}</textarea>
           </div>
+          ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? `<div class="pw-row">
+            <span class="pw-icon">🔓</span>
+            <input class="pw-edit" data-day-pass="${id}" value="${esc(dayPassVal)}" placeholder="${/^망원(동)?\s*2룸/.test(p.name||'') ? '앞 손님 체크인 날짜 (예: 1015*)' : '오늘 비번 (체크아웃) — 대표 문자 받으면 입력'}">
+          </div>${/^망원(동)?\s*2룸/.test(p.name||'') ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}` : ''}
           <div class="pw-row">
             <span class="pw-icon">🔑</span>
             <input class="pw-edit" data-pw-edit="${id}" value="${esc(p.password)}" placeholder="비밀번호 없음">
@@ -2848,6 +2962,15 @@ function attachHandlers(){
   document.querySelectorAll('[data-assign]').forEach(el=>{
     el.onchange = ()=> setAssign(el.dataset.assign, el.value);
   });
+  fillPassSuggestions();
+  document.querySelectorAll('[data-day-pass]').forEach(el=>{
+    el.onchange = async ()=>{
+      const r = state.todayRecord; r.dayPass = r.dayPass || {};
+      const v = el.value.trim();
+      if(v) r.dayPass[el.dataset.dayPass] = v; else delete r.dayPass[el.dataset.dayPass];
+      await saveTodayRecord(); render();
+    };
+  });
   document.querySelectorAll('[data-daynote]').forEach(el=>{
     el.onchange = async ()=>{
       const r = state.todayRecord; r.dayNotes = r.dayNotes || {};
@@ -3147,7 +3270,7 @@ async function applyEditToday(){
   // 다시 추가된 곳은 "제외됨" 목록에서 빠짐
   const excludedIds = [...existingExcluded.filter(e => !finalIds.includes(e.id)), ...newlyExcluded];
   state.todayRecord = { propertyIds: finalIds, tasks, priorityIds: Array.from(state.pickerPriority), excludedIds,
-    assign: state.todayRecord.assign || {}, dayNotes: state.todayRecord.dayNotes || {} };
+    assign: state.todayRecord.assign || {}, dayNotes: state.todayRecord.dayNotes || {}, dayPass: state.todayRecord.dayPass || {} };
   closeEditToday();
   await saveTodayRecord();
   render();
@@ -3292,6 +3415,7 @@ async function startApp(){
   await loadReportLog();
   await loadWorkLog();
   render();
+  cleanupOldDayPass();
   if(cloud) watchShared();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
   if(cloud && isAdmin() && state.properties.length === 0 && localStorage.getItem(KEY_PROPS)){
