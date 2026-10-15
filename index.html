@@ -3452,6 +3452,7 @@ function setupCardDrag(){
 
 // ===== 청소 예상 시간 (대략적인 가이드) =====
 const TRAVEL_MIN = 30, START_MIN = 11*60, WARN_SLACK = 60;
+function isPickupOnly(p){ return !!p.pickupOnly || /^연남동?\s*3\s*룸/.test(p.name||''); }
 function parseClockMin(str){
   if(!str) return null; const t = String(str);
   let m = t.match(/(\d{1,2})\s*:\s*(\d{2})/);
@@ -3463,15 +3464,21 @@ function parseClockMin(str){
   return h*60 + mi;
 }
 function fmtMin(n){ return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0'); }
+function roomCount(p){
+  const t = `${p.rooms||''} ${p.name||''}`;
+  const m = String(p.rooms||'').match(/^\s*(\d+)/);
+  if(m) return +m[1];
+  if(/3\s*룸|쓰리룸/.test(t)) return 3;
+  if(/복층|투룸|2\s*룸/.test(t)) return 2;
+  return 1;
+}
+function bedCount(p){ const n=(String(p.beds||'').match(/\d+/g)||[]).map(Number); return n.reduce((a,b)=>a+b,0); }
+// 기본: 룸 수로 시간, 침대가 (룸×2)개보다 많으면 1개당 +10분
 function cleanMinutes(p){
   if(p.cleanMin && +p.cleanMin > 0) return +p.cleanMin;
-  const t = `${p.rooms||''} ${p.name||''}`;
-  if(/복층|투룸|2\s*룸|2룸/.test(t)) return 135;
-  const m = String(p.rooms||'').match(/^\s*(\d+)/);
-  const n = m ? +m[1] : 1;
-  if(n >= 3 || /3\s*룸|쓰리룸/.test(t)) return 180;
-  if(n === 2) return 135;
-  return 90;
+  const rc = roomCount(p), base = rc>=3 ? 180 : (rc===2 || /복층/.test(`${p.rooms||''} ${p.name||''}`)) ? 135 : 90;
+  const bc = bedCount(p), extra = bc ? Math.max(0, bc - rc*2) : 0;
+  return base + extra*10;
 }
 // 직원별로 오늘 리스트 순서대로 돌며 예상 완료 시각 계산
 function computeEtas(){
@@ -3479,11 +3486,12 @@ function computeEtas(){
   if(!r) return out;
   const byStaff = {};
   r.propertyIds.forEach(id=>{
-    const p = propById(id); if(!p || p.pickupOnly) return;
-    const k = (r.assign||{})[id] || '_none';
+    const p = propById(id); if(!p || isPickupOnly(p)) return;
+    const k = (r.assign||{})[id] || ('_none'+id);
     (byStaff[k] = byStaff[k] || []).push(id);
   });
   Object.values(byStaff).forEach(ids=>{
+    ids = ids.slice().sort((x,y)=>{ const ix=parseClockMin(propById(x).in), iy=parseClockMin(propById(y).in); return ((ix==null?9999:ix)-(iy==null?9999:iy)) || (cleanMinutes(propById(x))-cleanMinutes(propById(y))); });
     let t = null;
     ids.forEach((id,i)=>{
       const p = propById(id);
@@ -3499,8 +3507,8 @@ function computeEtas(){
 }
 function etaBadge(id){
   const e = (state._etas||{})[id]; if(!e) return '';
-  const warn = e.slack!=null && e.slack < WARN_SLACK;
-  return `<div class="eta${warn?' warn':''}">${warn?'⚠️ ':''}~${fmtMin(e.end)} 완료${e.inT!=null?' · IN '+fmtMin(e.inT):''}${e.second?' · 2번째':''}</div>`;
+  const late = e.slack!=null && e.slack < 0, warn = e.slack!=null && e.slack < WARN_SLACK;
+  return `<div class="eta${warn?' warn':''}">${late?'🚨 ':warn?'⚠️ ':''}~${fmtMin(e.end)} 완료${e.inT!=null?' · IN '+fmtMin(e.inT):''}${e.second?' · 2번째':''}${late?' · '+Math.ceil(-e.slack/5)*5+'분 초과 예상':''}</div>`;
 }
 async function suggestOrder(){
   const r = state.todayRecord; const etas = computeEtas();
