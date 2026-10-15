@@ -2396,7 +2396,6 @@ function renderScheduleCards(){
     return laundryTask ? laundryTask.done : true;
   });
 
-  state._etas = computeEtas();
   const cards = ids.map((id, cardIdx)=>{
     const p = propById(id);
     if(!p) return '';
@@ -3480,48 +3479,25 @@ function cleanMinutes(p){
   const bc = bedCount(p), extra = bc ? Math.max(0, bc - rc*2) : 0;
   return base + extra*10;
 }
-// 직원별로 오늘 리스트 순서대로 돌며 예상 완료 시각 계산
-function computeEtas(){
-  const r = state.todayRecord; const out = {};
-  if(!r) return out;
-  const byStaff = {};
-  r.propertyIds.forEach(id=>{
-    const p = propById(id); if(!p || isPickupOnly(p)) return;
-    const k = (r.assign||{})[id] || ('_none'+id);
-    (byStaff[k] = byStaff[k] || []).push(id);
-  });
-  Object.values(byStaff).forEach(ids=>{
-    ids = ids.slice().sort((x,y)=>{ const ix=parseClockMin(propById(x).in), iy=parseClockMin(propById(y).in); return ((ix==null?9999:ix)-(iy==null?9999:iy)) || (cleanMinutes(propById(x))-cleanMinutes(propById(y))); });
-    let t = null;
-    ids.forEach((id,i)=>{
-      const p = propById(id);
-      const outT = parseClockMin(p.out);
-      const start = Math.max(START_MIN, outT==null?START_MIN:outT, t==null?0:t+TRAVEL_MIN);
-      const end = start + cleanMinutes(p) + (((r.delays||{})[id])||0);
-      t = end;
-      const inT = parseClockMin(p.in);
-      out[id] = { end, inT, slack: inT==null?null:inT-end, second: i>0 };
-    });
-  });
-  return out;
-}
+function fmtDur(n){ const h=Math.floor(n/60), m=n%60; return (h?h+'시간':'')+(m?(h?' ':'')+m+'분':''); }
 function etaBadge(id){
-  const e = (state._etas||{})[id]; if(!e) return '';
-  const late = e.slack!=null && e.slack < 0, warn = e.slack!=null && e.slack < WARN_SLACK;
-  return `<div class="eta${warn?' warn':''}">${late?'🚨 ':warn?'⚠️ ':''}~${fmtMin(e.end)} 완료${e.inT!=null?' · IN '+fmtMin(e.inT):''}${e.second?' · 2번째':''}${late?' · '+Math.ceil(-e.slack/5)*5+'분 초과 예상':''}</div>`;
+  const p = propById(id); if(!p || isPickupOnly(p)) return '';
+  const inT = parseClockMin(p.in);
+  return `<div class="eta">${inT!=null?'IN '+fmtMin(inT)+' 마감 · ':''}청소 약 ${fmtDur(cleanMinutes(p))}</div>`;
 }
+// 체크인 시간이 빠른 순 → 같으면 청소시간이 긴(큰) 숙소 먼저. 수거 전용은 맨 아래
 async function suggestOrder(){
-  const r = state.todayRecord; const etas = computeEtas();
-  const ids = r.propertyIds;
-  const main = ids.filter(id=>etas[id]).sort((a,b)=> (etas[a].end-etas[b].end) || ((etas[a].slack??9999)-(etas[b].slack??9999)));
-  const rest = ids.filter(id=>!etas[id]);
-  const lines = main.map((id,i)=>`${i+1}. ${propById(id).name} (~${fmtMin(etas[id].end)})`).join('\n');
+  const r = state.todayRecord; const ids = r.propertyIds;
+  const main = ids.filter(id=>{ const p=propById(id); return p && !isPickupOnly(p); });
+  const rest = ids.filter(id=>!main.includes(id));
+  const inOf = id=>{ const t=parseClockMin(propById(id).in); return t==null?9999:t; };
+  main.sort((a,b)=> (inOf(a)-inOf(b)) || (cleanMinutes(propById(b))-cleanMinutes(propById(a))));
   if(!main.length){ alert('순서를 정할 숙소가 없어.'); return; }
-  if(!confirm('예상 완료가 빠른 순서로 정렬할까?\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
+  const lines = main.map((id,i)=>{ const p=propById(id), t=parseClockMin(p.in); return `${i+1}. ${p.name} (IN ${t==null?'-':fmtMin(t)} · 청소 약 ${fmtDur(cleanMinutes(p))})`; }).join('\n');
+  if(!confirm('체크인 시간이 빠른 순서로 정렬할까?\n(같으면 청소시간이 긴 곳 먼저)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
   r.propertyIds = main.concat(rest);
   await saveTodayRecord(); render();
 }
-
 async function moveJobCard(id, direction){
   const ids = state.todayRecord.propertyIds;
   const idx = ids.indexOf(id);
