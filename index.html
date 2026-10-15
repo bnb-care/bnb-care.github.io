@@ -381,6 +381,8 @@
     border-radius:20px;padding:6px 10px;cursor:pointer;font-family:var(--sans);
   }
 
+  .schedule-cal-bar button.dnav{padding:6px 9px;font-size:11px;}
+
   /* modal */
   .overlay{
     position:fixed;inset:0;background:rgba(20,24,18,0.45);
@@ -2392,7 +2394,7 @@ function renderScheduleCards(){
         <div class="count-item">🧺 세탁물 <span>${laundryDoneCount}</span>/${laundryTotal}</div>
         <div class="count-item">✅ 청소 <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
-          ${isAdmin() ? `<button id="openAssign" title="배정표">📋</button>
+          ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
           <button id="openEditToday" title="숙소 추가제외">➕</button>
           <button id="relist" title="초기화">🔄</button>` : ''}
         </div>
@@ -2519,8 +2521,12 @@ function renderScheduleCalendar(){
   if(!state.scheduleCalendarOpen){
     return `
       <div class="schedule-cal-bar">
-        <div>${isTodaySelected ? '📅 오늘 · ' : '📅 '}<b>${dateLabel}</b></div>
-        <button id="toggleScheduleCal">다른 날짜 ▾</button>
+        <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+          <button class="dnav" data-day-nav="-1" aria-label="전날">◀</button>
+          <div style="white-space:nowrap;">${isTodaySelected ? '오늘 · ' : ''}<b>${dateLabel}</b></div>
+          <button class="dnav" data-day-nav="1" aria-label="다음날">▶</button>
+        </div>
+        <button id="toggleScheduleCal">달력 ▾</button>
       </div>
     `;
   }
@@ -2878,6 +2884,11 @@ function attachHandlers(){
   if(laundryReportBtn) laundryReportBtn.onclick = triggerLaundryReport;
   const openEditTodayBtn = document.getElementById('openEditToday');
   if(openEditTodayBtn) openEditTodayBtn.onclick = openEditToday;
+  document.querySelectorAll('[data-day-nav]').forEach(b=> b.onclick = ()=>{
+    const [y,m,d] = state.selectedDate.split('-').map(Number);
+    const dt = new Date(y, m-1, d + Number(b.dataset.dayNav));
+    selectScheduleDate(ymd(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+  });
   const toggleScheduleCalBtn = document.getElementById('toggleScheduleCal');
   if(toggleScheduleCalBtn) toggleScheduleCalBtn.onclick = ()=>{ state.scheduleCalendarOpen = !state.scheduleCalendarOpen; render(); };
   document.querySelectorAll('[data-select-date]').forEach(el=>{
