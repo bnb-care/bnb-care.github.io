@@ -251,6 +251,8 @@
   .excluded-item{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--ink-soft);padding:4px 0;}
   .excluded-meta{font-size:11px;font-family:var(--mono);}
   .job-name{font-family:var(--serif);font-size:16px;font-weight:700;}
+  .eta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .eta.warn{color:#B3321A;font-weight:700;}
   .job-owner{font-size:12px;color:var(--ink-soft);margin-top:2px;}
   .badge-row{display:flex;gap:6px;flex-shrink:0;}
   .badge{font-size:11px;font-family:var(--mono);padding:3px 6px;border-radius:5px;background:var(--mustard-soft);color:var(--mustard);white-space:nowrap;}
@@ -2394,6 +2396,7 @@ function renderScheduleCards(){
     return laundryTask ? laundryTask.done : true;
   });
 
+  state._etas = computeEtas();
   const cards = ids.map((id, cardIdx)=>{
     const p = propById(id);
     if(!p) return '';
@@ -2436,6 +2439,7 @@ function renderScheduleCards(){
               ${assignedSt ? `<span class="worker-badge">${esc(assignedSt.name)}</span>` : ''}
               ${tasks.filter(t=>t.done).map(t=>`<span class="badge" style="background:var(--teal-soft);color:var(--teal);flex-shrink:0;">${taskIcon(t.text)}</span>`).join('')}
             </div>
+            ${isDone?'':etaBadge(id)}
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
         </div>
@@ -2502,6 +2506,7 @@ function renderScheduleCards(){
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
           <button id="openEditToday" title="숙소 추가제외">➕</button>
+          <button id="suggestOrderBtn" title="예상 완료 순서로 정렬">⏱️</button>
           ${state.staff.length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
           <!-- 초기화(🔄) 버튼: 지금은 안 써서 숨김 (필요하면 <button id="relist" title="초기화">🔄</button> 다시 추가) -->` : ''}
           <button id="openMapAll" title="이 날 일정 전체 지도로 보기">🗺️</button>
@@ -2803,6 +2808,11 @@ function openEditSheet(prop){
         <div class="field"><label>주차등록 아이디</label><input id="f_parkingId" value="${esc(e.parkingId||'')}"></div>
         <div class="field"><label>주차등록 비밀번호</label><input id="f_parkingPw" value="${esc(e.parkingPw||'')}"></div>
       </div>
+      <div class="field"><label>청소시간(분) · 비우면 크기로 자동 계산</label><input id="f_cleanMin" inputmode="numeric" value="${esc(e.cleanMin||'')}" placeholder="예: 90"></div>
+      <label class="picker-row" style="margin-top:4px;">
+        <input type="checkbox" id="f_pickupOnly" ${e.pickupOnly?'checked':''}>
+        <div style="flex:1;"><div class="pname">세탁물 수거만 (순서 제외)</div><div class="paddr">청소 순서 계산과 예상 시각에서 빠지고 리스트 맨 아래로 가</div></div>
+      </label>
       <label class="picker-row" style="margin-top:4px;">
         <input type="checkbox" id="f_alwaysPriority" ${e.alwaysPriority?'checked':''}>
         <div style="flex:1;"><div class="pname">항상 당일체크인으로 표시</div><div class="paddr">오늘 리스트에 이 업체가 포함되면 자동으로 🔴 당일 표시가 켜져</div></div>
@@ -2832,6 +2842,8 @@ function openEditSheet(prop){
       parkingId: document.getElementById('f_parkingId').value.trim(),
       parkingPw: document.getElementById('f_parkingPw').value.trim(),
       alwaysPriority: document.getElementById('f_alwaysPriority').checked,
+      cleanMin: parseInt(document.getElementById('f_cleanMin').value,10) || 0,
+      pickupOnly: document.getElementById('f_pickupOnly').checked,
     };
     if(!vals.name){ alert('상호명은 필수야.'); return; }
     if(e.id){
@@ -3169,6 +3181,7 @@ function attachHandlers(){
   const logoutBtn = document.getElementById('logoutBtn');
   if(logoutBtn) logoutBtn.onclick = async ()=>{ if(confirm('로그아웃할까?')){ await cloud.fn.signOut(cloud.auth); location.reload(); } };
   document.querySelectorAll('[data-staff-msg]').forEach(b=> b.onclick = ()=> openPersonalSheet(b.dataset.staffMsg));
+  const sob = document.getElementById('suggestOrderBtn'); if(sob) sob.onclick = suggestOrder;
   const openMapAllBtn = document.getElementById('openMapAll');
   if(openMapAllBtn) openMapAllBtn.onclick = ()=>{ state.mapScope = 'today'; state.tab = 'map'; render(); window.scrollTo(0,0); };
   const mapBackEl = document.getElementById('mapBack');
@@ -3436,6 +3449,71 @@ function setupCardDrag(){
     };
   });
 }
+
+// ===== 청소 예상 시간 (대략적인 가이드) =====
+const TRAVEL_MIN = 30, START_MIN = 11*60, WARN_SLACK = 60;
+function parseClockMin(str){
+  if(!str) return null; const t = String(str);
+  let m = t.match(/(\d{1,2})\s*:\s*(\d{2})/);
+  let h, mi = 0;
+  if(m){ h = +m[1]; mi = +m[2]; }
+  else { m = t.match(/(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?/) || t.match(/^\s*(\d{1,2})\s*$/); if(!m) return null; h = +m[1]; mi = +(m[2]||0); }
+  if(/오후|pm/i.test(t) && h < 12) h += 12;
+  else if(!/오전|am/i.test(t) && h >= 1 && h <= 8) h += 12; // IN 3시 → 15시
+  return h*60 + mi;
+}
+function fmtMin(n){ return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0'); }
+function cleanMinutes(p){
+  if(p.cleanMin && +p.cleanMin > 0) return +p.cleanMin;
+  const t = `${p.rooms||''} ${p.name||''}`;
+  if(/복층|투룸|2\s*룸|2룸/.test(t)) return 135;
+  const m = String(p.rooms||'').match(/^\s*(\d+)/);
+  const n = m ? +m[1] : 1;
+  if(n >= 3 || /3\s*룸|쓰리룸/.test(t)) return 180;
+  if(n === 2) return 135;
+  return 90;
+}
+// 직원별로 오늘 리스트 순서대로 돌며 예상 완료 시각 계산
+function computeEtas(){
+  const r = state.todayRecord; const out = {};
+  if(!r) return out;
+  const byStaff = {};
+  r.propertyIds.forEach(id=>{
+    const p = propById(id); if(!p || p.pickupOnly) return;
+    const k = (r.assign||{})[id] || '_none';
+    (byStaff[k] = byStaff[k] || []).push(id);
+  });
+  Object.values(byStaff).forEach(ids=>{
+    let t = null;
+    ids.forEach((id,i)=>{
+      const p = propById(id);
+      const outT = parseClockMin(p.out);
+      const start = Math.max(START_MIN, outT==null?START_MIN:outT, t==null?0:t+TRAVEL_MIN);
+      const end = start + cleanMinutes(p) + (((r.delays||{})[id])||0);
+      t = end;
+      const inT = parseClockMin(p.in);
+      out[id] = { end, inT, slack: inT==null?null:inT-end, second: i>0 };
+    });
+  });
+  return out;
+}
+function etaBadge(id){
+  const e = (state._etas||{})[id]; if(!e) return '';
+  const warn = e.slack!=null && e.slack < WARN_SLACK;
+  return `<div class="eta${warn?' warn':''}">${warn?'⚠️ ':''}~${fmtMin(e.end)} 완료${e.inT!=null?' · IN '+fmtMin(e.inT):''}${e.second?' · 2번째':''}</div>`;
+}
+async function suggestOrder(){
+  const r = state.todayRecord; const etas = computeEtas();
+  const ids = r.propertyIds;
+  const main = ids.filter(id=>etas[id]).sort((a,b)=> (etas[a].end-etas[b].end) || ((etas[a].slack??9999)-(etas[b].slack??9999)));
+  const rest = ids.filter(id=>!etas[id]);
+  const lines = main.map((id,i)=>`${i+1}. ${propById(id).name} (~${fmtMin(etas[id].end)})`).join('\n');
+  if(!main.length){ alert('순서를 정할 숙소가 없어.'); return; }
+  if(!confirm('예상 완료가 빠른 순서로 정렬할까?\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
+  r.propertyIds = main.concat(rest);
+  await saveTodayRecord(); render();
+}
+
 async function moveJobCard(id, direction){
   const ids = state.todayRecord.propertyIds;
   const idx = ids.indexOf(id);
