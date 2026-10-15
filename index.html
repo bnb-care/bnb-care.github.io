@@ -2388,10 +2388,9 @@ function renderScheduleCards(){
   return `
     ${COMPANY_MODE ? '' : (state.selectedDate <= todayStr() ? renderClockCard() : renderClockReadOnly())}
     <div class="summary">
-      <div class="date">${renderDateLabel()}</div>
       <div class="count-row">
         <div class="count-item">🧺 세탁물 <span>${laundryDoneCount}</span>/${laundryTotal}</div>
-        <div class="count-item">✅ 컨디션 <span>${conditionDoneCount}</span>/${conditionTotal}</div>
+        <div class="count-item">✅ 청소 <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
           ${isAdmin() ? `<button id="openAssign" title="배정표">📋</button>
           <button id="openEditToday" title="숙소 추가제외">➕</button>
