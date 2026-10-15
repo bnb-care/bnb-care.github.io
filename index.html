@@ -120,10 +120,10 @@
   /* today card */
   .job-card{
     background:var(--surface);border:1px solid var(--paper-line);
-    border-left:8px solid #D5D0C8;
-    border-radius:var(--radius);padding:14px 14px 14px 8px;margin-bottom:12px;
+    
+    border-radius:var(--radius);padding:14px;margin-bottom:12px;
   }
-  .job-card.done{border-left-color:var(--teal);opacity:0.72;}
+  .job-card.done{border-left:4px solid var(--teal);opacity:0.72;}
   /* 당일 표시는 번호 동그라미(빨강)로 하고, 왼쪽 막대는 대표 색/회색 그대로 둠 */
   .job-head{display:flex;align-items:center;gap:10px;cursor:pointer;}
   .job-addr-inline{
@@ -188,8 +188,9 @@
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
-  .cchip{display:block;border-left:4px solid #D5D0C8;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#F3D2C5;color:#5a2a1c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .cchip.pri{font-weight:600;}
+  .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#F3D2C5;color:#5a2a1c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cchip.pri{font-weight:700;color:#B3321A;}
+  .cchip.pri.done{color:var(--teal);}
   .cchip.fx{display:flex;align-items:center;gap:3px;}
   .cchip.fx .nmw{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .cchip.fx .wm{flex-shrink:0;}
@@ -206,7 +207,7 @@
   .wk-day .wd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
   .wk-day .wd b{font-size:20px;}
   .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
-  .wk-chip{display:flex;border-left:4px solid #D5D0C8;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
+  .wk-chip{display:flex;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
   .wk-chip.done{background:var(--teal-soft,#dcebe7);}
   .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
   .wash-btn{flex-shrink:0;font-size:13px;line-height:1;padding:6px 9px;border-radius:14px;border:1px solid var(--paper-line);background:var(--surface);color:var(--ink-soft);cursor:pointer;font-family:var(--sans);}
@@ -229,7 +230,7 @@
   .cc-panel{margin-top:12px;}
   .cc-panel .ph{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
   .cc-panel .ph b{font-size:16px;flex:1;}
-  .cc-panel .ph button{border:1px solid var(--paper-line);background:var(--surface);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--sans);color:var(--ink);}
+  .cc-panel .ph button{border:1px solid var(--paper-line);background:var(--surface);border-radius:8px;padding:6px 12px;font-size:18px;line-height:1.2;cursor:pointer;font-family:var(--sans);color:var(--ink);}
   .cal-list-row{background:var(--surface);border:1px solid var(--paper-line);border-radius:8px;padding:10px 12px;margin-bottom:8px;cursor:pointer;}
   .cal-list-row.sel{outline:2px solid var(--teal);}
   .cal-list-row .d{font-weight:700;font-size:14px;margin-bottom:6px;display:flex;justify-content:space-between;}
@@ -434,7 +435,7 @@
     <button class="tab" data-tab="today">오늘</button>
     <button class="tab" data-tab="map">지도</button>
     <button class="tab" data-tab="all">숙소</button>
-    <button class="tab" data-tab="staff">청소담당</button>
+    <button class="tab" data-tab="staff">직원</button>
   </div>
 </div>
 
@@ -821,7 +822,7 @@ function openSendSheet(){
   }).filter(Boolean).join('');
   const root = document.createElement('div');
   root.className='overlay'; root.id='overlay';
-  root.innerHTML = `<div class="sheet"><h2>✉️ 청소담당 보내기</h2>
+  root.innerHTML = `<div class="sheet"><h2>✉️ 직원 보내기</h2>
     <div style="margin-bottom:8px;">${rows || '<div style="font-size:13px;color:var(--ink-soft);">보낼 일정이 없어.</div>'}</div>
     <div class="sheet-actions"><button class="cancel-btn" id="closeSend">닫기</button></div></div>`;
   document.body.appendChild(root);
@@ -994,9 +995,24 @@ function renderStaffTab(){
         ${props.length?`<button class="pill-btn" data-staff-msg="${st.id}" style="margin-top:8px;">✉️ ${esc(st.name)}님께 보내기</button>${' '+sentBadge(st.id)}`:''}
       </div></div>`;
   };
+  const mp = computeThisMonthPay();
+  const attend = isAdmin() ? `
+    <div class="prop-card open" style="margin-bottom:12px;"><div style="padding:12px;">
+      <div style="font-weight:700;font-size:15px;margin-bottom:6px;">🕒 내 근태</div>
+      ${renderClockCard()}
+      <div style="font-size:13px;margin-top:8px;">이번달 ${formatMinutes(mp.totalMinutes)}${state.hourlyWage?' · 예상 '+mp.pay.toLocaleString()+'원':''}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+        <button class="pill-btn" id="workImportBtn">📥 기록 가져오기</button>
+        <button class="pill-btn" id="exportWorkLogBtn">📤 CSV 내보내기</button>
+        <button class="pill-btn" id="setHourlyWageBtn">💰 시급 ${state.hourlyWage ? state.hourlyWage.toLocaleString()+'원' : '설정'}</button>
+        <input type="file" id="workImportFile" accept=".csv,.json,.txt" style="display:none;">
+      </div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">이 폰에만 저장돼. 날짜는 일정·오늘 탭에서 고른 날짜 기준이야.</div>
+    </div></div>` : '';
   return `
     <div class="summary"><div class="date">${renderDateLabel()}</div>
       <div style="font-size:12px;color:var(--ink-soft);">날짜는 ${COMPANY_MODE?'일정·오늘':'일정'} 탭에서 바꿔 · 가능 ${avail.length}명 / 불가 ${unavail.length}명</div></div>
+    ${attend}
     ${state.staff.length ? avail.map(card).join('') + (unavail.length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.map(card).join(''):'') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
     <div style="display:flex;gap:8px;margin-top:12px;">
       <button class="pill-btn" id="noticeBtn">📢 공지 보내기</button>
@@ -1005,6 +1021,18 @@ function renderStaffTab(){
     </div>`;
 }
 function attachStaffHandlers(){
+  document.querySelectorAll('[data-clock-action]').forEach(el=>{ el.onclick = async ()=>{
+    const cd = state.selectedDate || todayStr();
+    await upsertWorkEntry(cd, el.dataset.clockAction==='in' ? { clockIn: '10:00' } : { clockOut: '16:00' });
+    render(); }; });
+  document.querySelectorAll('[data-clock-edit]').forEach(el=>{ el.onchange = async ()=>{
+    await upsertWorkEntry(state.selectedDate || todayStr(), { [el.dataset.clockEdit==='in'?'clockIn':'clockOut']: el.value });
+    render(); }; });
+  document.querySelectorAll('[data-step]').forEach(el=>{ el.onclick = ()=>{ const [f,d]=el.dataset.step.split(':'); stepClockTime(f, Number(d)); }; });
+  const ex=document.getElementById('exportWorkLogBtn'); if(ex) ex.onclick = exportWorkLogCSV;
+  const wg=document.getElementById('setHourlyWageBtn'); if(wg) wg.onclick = setHourlyWage;
+  const wi=document.getElementById('workImportBtn'), wf=document.getElementById('workImportFile');
+  if(wi && wf){ wi.onclick = ()=> wf.click(); wf.onchange = async ()=>{ const f=wf.files[0]; if(!f) return; await importWorkLog(await f.text()); wf.value=''; }; }
   document.querySelectorAll('[data-staff-edit]').forEach(b=> b.onclick = ()=> openStaffEditSheet(staffById(b.dataset.staffEdit)));
   document.querySelectorAll('[data-staff-msg]').forEach(b=> b.onclick = ()=> openPersonalSheet(b.dataset.staffMsg));
   const nb=document.getElementById('noticeBtn'); if(nb) nb.onclick = openNoticeSheet;
@@ -1273,7 +1301,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const rec = inMonth ? state.monthRecords[ds] : null;
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    const dots = chips.slice(0,6).map(c=>{ const p = propById(c.id); const m = p && ownerStyle(p,false).match(/solid (#[0-9A-Fa-f]+)/); return `<i style="${m?'background:'+m[1]+';':''}"></i>`; }).join('');
+    const dots = chips.slice(0,6).map(c=>`<i></i>`).join('');
     cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
       <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<div class="dots">${dots}</div><span class="cn">${chips.length}${chips.filter(c=>c.pri).length?` <b style="color:var(--clay);">●${chips.filter(c=>c.pri).length}</b>`:''}</span>`:''}</div>`;
   }
@@ -1281,12 +1309,12 @@ function renderCompactCal(head, year, month, first, days, tStr){
   const chips = rec ? chipsFor(rec) : [];
   const [py,pm,pd] = pick.split('-').map(Number); const pw = new Date(py,pm-1,pd).getDay(); const hn = holidayName(pick);
   const list = chips.length ? chips.map(c=>{ const p = propById(c.id);
-      return `<div class="wk-chip ${c.done?'done':''}" style="background:var(--surface);border:1px solid var(--paper-line);${p?ownerStyle(p,true):''}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}${washBtn(pick,c)}</div>`; }).join('')
+      return `<div class="wk-chip ${c.done?'done':''}" style="background:var(--surface);border:1px solid var(--paper-line);"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}${washBtn(pick,c)}</div>`; }).join('')
     : '<div class="wk-empty">일정 없음</div>';
   const pastCls = pick < todayStr() ? 'past' : '';
   return head + `<div class="mc-grid">${cells}</div>
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span></div>
-    <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${chips.length?`<button data-cal-day="${pick}">자세히 ▶</button>`:''}${isAdmin()?`<button data-cal-add="${pick}">+ 일정 추가</button>`:''}</div>${list}</div>`;
+    <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${chips.length?`<button data-cal-day="${pick}" title="자세히" aria-label="자세히">🔍</button>`:''}${isAdmin()?`<button data-cal-add="${pick}" title="일정 추가" aria-label="일정 추가">➕</button>`:''}</div>${list}</div>`;
 }
 function renderCalendarTab(){
   if(!cloud) state.monthRecords = readLocalMonth();
@@ -1318,7 +1346,7 @@ function renderCalendarTab(){
       const chips = chipsFor(rec);
       rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''} ${ds<todayStr()?'past':''}" data-cal-day="${ds}">
         <div class="d"><span class="${cls}">${month+1}/${d} (${DAY_NAMES[wd]}) ${holidayName(ds)?'· '+holidayName(ds):''}</span><span style="font-size:12px;color:var(--ink-soft);">${chips.length}건</span></div>
-        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.wash?' 🧺':''}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
+        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}">${esc(c.name)}${c.wash?' 🧺':''}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
     }
     return head + (rows.length ? rows.join('') : '<div class="empty">이 달에는 등록된 일정이 없어.</div>');
   }
@@ -1338,7 +1366,7 @@ function renderCalendarTab(){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
-      ${chips.map(c=>`<span class="cchip fx ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b><span class="nmw"><span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>${c.wash?'<span class="wm">🧺</span>':''}</span>`).join('')}
+      ${chips.map(c=>`<span class="cchip fx ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><span class="nmw"><span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>${c.wash?'<span class="wm">🧺</span>':''}</span>`).join('')}
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
@@ -1716,7 +1744,7 @@ function groupOf(p){
   const ph = String(p.phone||'').replace(/\D/g,''), nm = String(p.name||'').trim();
   return GROUP_COLORS.findIndex(g => (g.phone && g.phone===ph) || (g.name && g.name.test(nm)));
 }
-function barStyle(p){ const st=ownerStyle(p,false); return st? st.replace('8px','4px') : ''; }
+function barStyle(p){ return ''; }
 function ownerStyle(p, tint){
   if(!p) return '';
   let c = OWNER_COLORS[String(p.owner||'').trim()];
@@ -2372,7 +2400,7 @@ function renderScheduleCards(){
     const warns = warningsFor(assignedSt, p);
     const dayNote = (state.todayRecord.dayNotes||{})[id] || '';
     const dayPassVal = (state.todayRecord.dayPass||{})[id] || '';
-    if(/매번/.test(p.password||'') && !dayPassVal && assignedSt) warns.push('오늘 비번 미입력 (청소담당에게 "비번 추후 전달"로 나가고 있어)');
+    if(/매번/.test(p.password||'') && !dayPassVal && assignedSt) warns.push('오늘 비번 미입력 (직원에게 "비번 추후 전달"로 나가고 있어)');
     const assignOpts = `<option value="">작업자 미배정</option>` + state.staff.map(st=>`<option value="${st.id}" ${assignedSt&&assignedSt.id===st.id?'selected':''}>${esc(st.name)}${staffUnavailable(st)?' ('+offLabel(st)+')':''}</option>`).join('');
     const taskRows = tasks.map((t,idx)=>`
       <div class="task-item ${t.done?'done':''}">
@@ -2392,7 +2420,7 @@ function renderScheduleCards(){
       </div>
     ` : '';
     return `
-      <div class="job-card ${isDone?'done':''} ${isPriority && !isDone ?'priority':''} ${state.openJobIds.has(id)?'open':''}" style="${ownerStyle(p,false)}">
+      <div class="job-card ${isDone?'done':''} ${isPriority && !isDone ?'priority':''} ${state.openJobIds.has(id)?'open':''}" style="">
         <div class="job-head" data-toggle-job="${id}">
           <div class="order-cluster">
             ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
@@ -2470,8 +2498,9 @@ function renderScheduleCards(){
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
           <button id="openEditToday" title="숙소 추가제외">➕</button>
-          ${state.staff.length && state.todayRecord ? `<button id="openSend" title="청소담당 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
+          ${state.staff.length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
           <!-- 초기화(🔄) 버튼: 지금은 안 써서 숨김 (필요하면 <button id="relist" title="초기화">🔄</button> 다시 추가) -->` : ''}
+          <button id="openMapAll" title="이 날 일정 전체 지도로 보기">🗺️</button>
         </div>
       </div>
     </div>
@@ -2555,9 +2584,12 @@ function renderAll(){
   `;
 }
 
+function mapBackBtn(){
+  return COMPANY_MODE ? '<button class="relist-btn" id="mapBack" style="margin-bottom:10px;">← 일정으로 돌아가기</button>' : '';
+}
 function renderMapTab(){
   if(!state.kakaoKey){
-    return `
+    return mapBackBtn() + `
       <div class="setup-card">
         <h3>지도를 보려면 카카오 키가 필요해</h3>
         <p>카카오 개발자센터(developers.kakao.com)에서 발급받은 <b>JavaScript 키</b>를 붙여넣어줘. 무료이고, 한 번만 입력하면 계속 저장돼.</p>
@@ -2567,7 +2599,7 @@ function renderMapTab(){
     `;
   }
   const scope = state.mapScope;
-  return `
+  return mapBackBtn() + `
     <div class="map-scope">
       <button class="scope-btn ${scope==='today'?'active':''}" data-scope="today">오늘 리스트만</button>
       <button class="scope-btn ${scope==='all'?'active':''}" data-scope="all">전체 숙소</button>
@@ -2669,6 +2701,28 @@ async function selectScheduleDate(dateKey){
   render();
 }
 
+
+async function importWorkLog(text){
+  const T=/^\d{1,2}:\d{2}$/, norm=t=>{ if(!t) return null; t=String(t).trim(); if(!T.test(t)) return null; const [h,m]=t.split(':'); return pad2(+h)+':'+pad2(+m); };
+  let rows=[];
+  try{
+    const j=JSON.parse(text);
+    const arr=Array.isArray(j)?j:(j.workLog||j.entries||[]);
+    rows=arr.map(e=>({date:e.date,clockIn:norm(e.clockIn||e.in),clockOut:norm(e.clockOut||e.out)}));
+  }catch(e){
+    text.replace(/^\uFEFF/,'').split(/\r?\n/).forEach(line=>{
+      const c=line.split(',').map(x=>x.replace(/^"|"$/g,'').trim());
+      const m=(c[0]||'').match(/^(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})/);
+      if(m) rows.push({date:`${m[1]}-${pad2(+m[2])}-${pad2(+m[3])}`,clockIn:norm(c[1]),clockOut:norm(c[2])});
+    });
+  }
+  rows=rows.filter(r=>r.date && (r.clockIn||r.clockOut));
+  if(!rows.length){ alert('가져올 기록을 못 찾았어. 개인용에서 내보낸 CSV 파일인지 확인해줘.'); return; }
+  const dup=rows.filter(r=>getWorkEntry(r.date)).length;
+  if(!confirm(`${rows.length}일치 기록을 가져올까?`+(dup?`\n(이미 있는 ${dup}일은 가져온 값으로 바뀌어)`:''))) return;
+  rows.forEach(r=>{ const i=state.workLog.findIndex(e=>e.date===r.date); const o={date:r.date,clockIn:r.clockIn,clockOut:r.clockOut}; if(i<0) state.workLog.push(o); else state.workLog[i]={...state.workLog[i],...o}; });
+  await saveWorkLog(); render(); alert(rows.length+'일치 기록을 가져왔어.');
+}
 function exportWorkLogCSV(){
   const hasWage = !!state.hourlyWage;
   const header = hasWage ? ['날짜','출근','퇴근','근무시간','예상급여(원)'] : ['날짜','출근','퇴근','근무시간'];
@@ -3089,6 +3143,10 @@ function attachHandlers(){
   const logoutBtn = document.getElementById('logoutBtn');
   if(logoutBtn) logoutBtn.onclick = async ()=>{ if(confirm('로그아웃할까?')){ await cloud.fn.signOut(cloud.auth); location.reload(); } };
   document.querySelectorAll('[data-staff-msg]').forEach(b=> b.onclick = ()=> openPersonalSheet(b.dataset.staffMsg));
+  const openMapAllBtn = document.getElementById('openMapAll');
+  if(openMapAllBtn) openMapAllBtn.onclick = ()=>{ state.mapScope = 'today'; state.tab = 'map'; render(); window.scrollTo(0,0); };
+  const mapBackEl = document.getElementById('mapBack');
+  if(mapBackEl) mapBackEl.onclick = ()=>{ state.tab = 'today'; render(); window.scrollTo(0,0); };
   const openSendBtn = document.getElementById('openSend');
   if(openSendBtn) openSendBtn.onclick = openSendSheet;
   const openAssignBtn = document.getElementById('openAssign');
