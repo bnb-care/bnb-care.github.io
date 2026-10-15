@@ -251,6 +251,10 @@
   .excluded-item{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--ink-soft);padding:4px 0;}
   .excluded-meta{font-size:11px;font-family:var(--mono);}
   .job-name{font-family:var(--serif);font-size:16px;font-weight:700;}
+  .qchk{display:flex;gap:6px;margin-top:6px;}
+  .qb{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--paper-line);background:var(--surface);color:var(--ink-soft);border-radius:999px;padding:5px 11px;font-size:13px;font-family:var(--sans);cursor:pointer;}
+  .qb.on{background:var(--teal);border-color:var(--teal);color:#fff;}
+  .qb:not(.on){opacity:.85;}
   .eta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
   .eta.warn{color:#B3321A;font-weight:700;}
   .job-owner{font-size:12px;color:var(--ink-soft);margin-top:2px;}
@@ -2412,7 +2416,7 @@ function renderScheduleCards(){
       <div class="task-item ${t.done?'done':''}">
         <div class="task-item-main" data-task="${id}:${idx}">
           <div class="box">${t.done?'✓':''}</div>
-          <div class="ttext">${esc(t.text)}${t.done && t.by ? ` <span class="tby">· ${esc(t.by)}${t.at?' '+fmtClock(t.at):''}</span>` : ''}</div>
+          <div class="ttext">${esc(t.text)}</div>
         </div>
         ${isAdmin() ? `<button class="task-remove" data-remove-task="${id}:${idx}" title="이 업체에서 항목 빼기">✕</button>` : ''}
       </div>
@@ -2436,9 +2440,9 @@ function renderScheduleCards(){
             <div style="display:flex;align-items:center;gap:6px;min-width:0;">
               <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</div>
               ${assignedSt ? `<span class="worker-badge">${esc(assignedSt.name)}</span>` : ''}
-              ${tasks.filter(t=>t.done).map(t=>`<span class="badge" style="background:var(--teal-soft);color:var(--teal);flex-shrink:0;">${taskIcon(t.text)}</span>`).join('')}
             </div>
             ${isDone?'':etaBadge(id)}
+            <div class="qchk">${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}<span>${t.text.includes('전달')?'전달':t.text.includes('세탁')?'세탁':'청소'}</span></button>`).join('')}</div>
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
         </div>
@@ -2504,8 +2508,8 @@ function renderScheduleCards(){
         <div class="count-item">✅ 청소 <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
+          <button id="suggestOrderBtn" title="체크인 시간 순서로 정렬">🔢</button>
           <button id="openEditToday" title="숙소 추가제외">➕</button>
-          <button id="suggestOrderBtn" title="예상 완료 순서로 정렬">⏱️</button>
           ${state.staff.length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
           <!-- 초기화(🔄) 버튼: 지금은 안 써서 숨김 (필요하면 <button id="relist" title="초기화">🔄</button> 다시 추가) -->` : ''}
           <button id="openMapAll" title="이 날 일정 전체 지도로 보기">🗺️</button>
