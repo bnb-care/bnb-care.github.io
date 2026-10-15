@@ -180,6 +180,9 @@
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
   .cchip{display:block;border-left:4px solid #D5D0C8;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#F3D2C5;color:#5a2a1c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cchip.pri{font-weight:600;}
+  .cchip.fx{display:flex;align-items:center;gap:3px;}
+  .cchip.fx .nmw{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cchip.fx .wm{flex-shrink:0;}
   .cchip.lg{display:inline-flex;align-items:center;gap:3px;margin:0;padding:3px 8px;font-size:11px;}
   .cchip .pd{color:var(--clay);font-weight:800;}
   .cchip.done{background:var(--teal-soft);color:var(--teal);}
@@ -1285,7 +1288,7 @@ function renderCalendarTab(){
       const chips = chipsFor(rec);
       rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''} ${ds<todayStr()?'past':''}" data-cal-day="${ds}">
         <div class="d"><span class="${cls}">${month+1}/${d} (${DAY_NAMES[wd]}) ${holidayName(ds)?'· '+holidayName(ds):''}</span><span style="font-size:12px;color:var(--ink-soft);">${chips.length}건</span></div>
-        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${c.wash?'🧺 ':''}${esc(c.name)}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
+        <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${esc(c.name)}${c.wash?' 🧺':''}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
     }
     return head + (rows.length ? rows.join('') : '<div class="empty">이 달에는 등록된 일정이 없어.</div>');
   }
@@ -1305,7 +1308,7 @@ function renderCalendarTab(){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
-      ${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b> ${c.wash?'🧺':''}<span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>`).join('')}
+      ${chips.map(c=>`<span class="cchip fx ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><b class="pd" style="${c.pri?'':'color:#fff;'}">●</b><span class="nmw"><span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>${c.wash?'<span class="wm">🧺</span>':''}</span>`).join('')}
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
