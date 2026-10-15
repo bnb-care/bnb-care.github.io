@@ -1000,7 +1000,7 @@ function renderStaffTab(){
     <div class="prop-card open" style="margin-bottom:12px;"><div style="padding:12px;">
       <div style="font-weight:700;font-size:15px;margin-bottom:6px;">🕒 내 근태</div>
       ${renderClockCard()}
-      <div style="font-size:13px;margin-top:8px;">이번달 ${formatMinutes(mp.totalMinutes)}${state.hourlyWage?' · 예상 '+mp.pay.toLocaleString()+'원':''}</div>
+      ${renderWorkMonthList()}
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
         <button class="pill-btn" id="workImportBtn">📥 기록 가져오기</button>
         <button class="pill-btn" id="exportWorkLogBtn">📤 CSV 내보내기</button>
@@ -1029,6 +1029,10 @@ function attachStaffHandlers(){
     await upsertWorkEntry(state.selectedDate || todayStr(), { [el.dataset.clockEdit==='in'?'clockIn':'clockOut']: el.value });
     render(); }; });
   document.querySelectorAll('[data-step]').forEach(el=>{ el.onclick = ()=>{ const [f,d]=el.dataset.step.split(':'); stepClockTime(f, Number(d)); }; });
+  document.querySelectorAll('[data-work-month]').forEach(b=> b.onclick = ()=>{
+    const base=new Date(); const [Y,M]=(state.workMonth||`${base.getFullYear()}-${pad2(base.getMonth()+1)}`).split('-').map(Number);
+    const d=new Date(Y,M-1+Number(b.dataset.workMonth),1); state.workMonth=`${d.getFullYear()}-${pad2(d.getMonth()+1)}`; render(); });
+  document.querySelectorAll('[data-work-day]').forEach(r=> r.onclick = ()=>{ state.selectedDate=r.dataset.workDay; render(); });
   const ex=document.getElementById('exportWorkLogBtn'); if(ex) ex.onclick = exportWorkLogCSV;
   const wg=document.getElementById('setHourlyWageBtn'); if(wg) wg.onclick = setHourlyWage;
   const wi=document.getElementById('workImportBtn'), wf=document.getElementById('workImportFile');
@@ -1313,7 +1317,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     : '<div class="wk-empty">일정 없음</div>';
   const pastCls = pick < todayStr() ? 'past' : '';
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span></div>
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일체크인</span></div>
     <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${chips.length?`<button data-cal-day="${pick}" title="자세히" aria-label="자세히">🔍</button>`:''}${isAdmin()?`<button data-cal-add="${pick}" title="일정 추가" aria-label="일정 추가">➕</button>`:''}</div>${list}</div>`;
 }
 function renderCalendarTab(){
@@ -1370,7 +1374,7 @@ function renderCalendarTab(){
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip lg"><b class="pd">●</b> 당일체크인</span><span class="cchip lg"><b class="pd" style="color:#fff;">●</b> 청소</span><span class="cchip done lg">완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일체크인</span><span class="cchip lg">청소</span><span class="cchip done lg">완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
@@ -1962,7 +1966,7 @@ function openBulkParkingSheet(){
 }
 
 function openCompanyLocationSheet(){
-  const cur = state.companyLocation || { name:'', address:'', owner:'', phone:'', carPlate:'' };
+  const cur = state.companyLocation || { name:'BNB CARE', address:'서울시 마포구 연남동 224-56', owner:'', phone:'', carPlate:'' };
   const root = document.createElement('div');
   root.className = 'overlay';
   root.id = 'overlay';
@@ -2702,6 +2706,28 @@ async function selectScheduleDate(dateKey){
 }
 
 
+
+function renderWorkMonthList(){
+  const base = new Date(); const ym = state.workMonth || `${base.getFullYear()}-${pad2(base.getMonth()+1)}`;
+  const [Y,M] = ym.split('-').map(Number);
+  const list = state.workLog.filter(e=>e.date.startsWith(ym) && (e.clockIn||e.clockOut)).sort((a,b)=>a.date.localeCompare(b.date));
+  const done = list.filter(e=>e.clockIn&&e.clockOut);
+  const mins = done.reduce((t,e)=>t+durationMinutes(e.clockIn,e.clockOut),0);
+  const pay = Math.round(mins/60*(state.hourlyWage||0));
+  const sel = state.selectedDate || todayStr();
+  const rows = list.map(e=>{
+    const d=new Date(e.date+'T00:00:00'); const dur=(e.clockIn&&e.clockOut)?formatDuration(e.clockIn,e.clockOut):'<span style="color:var(--clay);">미완료</span>';
+    return `<div data-work-day="${e.date}" style="display:flex;gap:8px;align-items:center;padding:8px 6px;border-top:1px solid var(--paper-line);font-size:14px;cursor:pointer;${e.date===sel?'background:var(--teal-soft,#dcebe7);border-radius:6px;':''}">
+      <span style="width:62px;">${d.getMonth()+1}/${d.getDate()} (${DAY_NAMES[d.getDay()]})</span>
+      <span style="flex:1;">${e.clockIn||'-'} ~ ${e.clockOut||'-'}</span><b>${dur}</b></div>`; }).join('');
+  return `<div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+      <button class="pill-btn" data-work-month="-1">◀</button>
+      <b style="flex:1;text-align:center;">${Y}년 ${M}월</b>
+      <button class="pill-btn" data-work-month="1">▶</button></div>
+    <div style="font-size:13px;margin:6px 0;text-align:center;">${done.length}일 · ${formatMinutes(mins)}${state.hourlyWage?' · 예상 '+pay.toLocaleString()+'원':''}</div>
+    ${rows || '<div style="font-size:13px;color:var(--ink-soft);text-align:center;padding:10px;">이 달 기록 없음</div>'}
+    ${rows?'<div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">날짜를 누르면 위 출퇴근 칸에서 고칠 수 있어</div>':''}`;
+}
 async function importWorkLog(text){
   const T=/^\d{1,2}:\d{2}$/, norm=t=>{ if(!t) return null; t=String(t).trim(); if(!T.test(t)) return null; const [h,m]=t.split(':'); return pad2(+h)+':'+pad2(+m); };
   let rows=[];
