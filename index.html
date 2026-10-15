@@ -133,7 +133,9 @@
   .nav-icon-btn{
     flex-shrink:0;font-size:18px;text-decoration:none;padding:2px 4px;line-height:1;
   }
-  .meta-addr{color:var(--teal);margin-bottom:4px;}
+  .meta-addr{color:var(--teal);margin-bottom:4px;font-size:inherit;}
+  .meta-sub{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:inherit;}
+  .meta-sub span{min-width:0;}
   .order-cluster{display:flex;flex-direction:row;align-items:center;gap:4px;flex-shrink:0;}
   .order-num{
     flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--ink);color:#fff;
@@ -2407,22 +2409,10 @@ function renderScheduleCards(){
         </div>
         <div class="job-detail">
           <div class="meta-line">
-            <div class="meta-addr">🧭 ${esc(p.address)}</div>
-            <div>OUT ${esc(p.out)} · IN ${esc(p.in)}${p.rooms ? ` · 룸/화장실 ${esc(p.rooms)}` : ''}${p.beds ? ` · ${esc(p.beds)}` : ''}</div>
+            <div class="meta-addr">${esc(p.address)}</div>
+            <div class="meta-sub"><span>OUT ${esc(p.out)} · IN ${esc(p.in)}${p.rooms ? ` · 룸/화장실 ${esc(p.rooms)}` : ''}${p.beds ? ` · ${esc(p.beds)}` : ''}</span>${isAdmin() ? `<button class="priority-toggle ${isPriority?'active':''}" data-toggle-priority="${id}">🔴 당일</button>` : ''}</div>
           </div>
-          <div class="job-row" style="margin-top:8px;${isAdmin()?'':'display:none;'}">
-            <button class="priority-toggle ${isPriority?'active':''}" data-toggle-priority="${id}">🔴 당일체크인${isPriority?' 해제':''}</button>
-            <button class="priority-toggle" data-move-date="${id}" style="margin-left:6px;">📅 날짜 이동</button>
-          </div>
-          <div class="assign-row">
-            <span class="pw-icon">👤</span>
-            <select data-assign="${id}" ${isAdmin()?'':'disabled'}>${assignOpts}</select>
-          </div>
-          ${warns.map(w=>`<div class="warn-line">⚠️ ${esc(w)}</div>`).join('')}
-          <div class="notes-row">
-            <span class="pw-icon">📝</span>
-            <textarea class="day-note" data-daynote="${id}" placeholder="오늘 특이사항 (예: 5시체크인, 비번변경)">${esc(dayNote)}</textarea>
-          </div>
+          <!-- 날짜 이동 버튼: 지금은 안 써서 숨김 (필요하면 <button class="priority-toggle" data-move-date="${id}">📅 날짜 이동</button> 다시 추가) -->
           ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? `<div class="pw-row">
             <span class="pw-icon">🔓</span>
             <input class="pw-edit" data-day-pass="${id}" value="${esc(dayPassVal)}" placeholder="${/^망원(동)?\s*2룸/.test(p.name||'') ? '앞 손님 체크인 날짜 (예: 1015*)' : '오늘 비번 (체크아웃) — 대표 문자 받으면 입력'}">
@@ -2434,6 +2424,15 @@ function renderScheduleCards(){
           <div class="notes-row">
             <span class="pw-icon">📋</span>
             <textarea class="notes-edit" data-notes-edit="${id}" placeholder="참고사항 없음">${esc(p.notes)}</textarea>
+          </div>
+          <div class="assign-row">
+            <span class="pw-icon">👤</span>
+            <select data-assign="${id}" ${isAdmin()?'':'disabled'}>${assignOpts}</select>
+          </div>
+          ${warns.map(w=>`<div class="warn-line">⚠️ ${esc(w)}</div>`).join('')}
+          <div class="notes-row">
+            <span class="pw-icon">📝</span>
+            <textarea class="day-note" data-daynote="${id}" placeholder="오늘 특이사항 (예: 5시체크인, 비번변경)">${esc(dayNote)}</textarea>
           </div>
           ${p.parkingUrl ? `
           <div class="pw-row">
