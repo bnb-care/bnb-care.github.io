@@ -139,6 +139,7 @@
     flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--ink);color:#fff;
     font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;
   }
+  .order-num.pri{background:var(--clay);}
   .job-title-block{display:flex;flex-direction:column;min-width:0;flex:1;}
   .job-detail{display:none;}
   .job-card.open .job-detail{display:block;}
@@ -2393,12 +2394,11 @@ function renderScheduleCards(){
         <div class="job-head" data-toggle-job="${id}">
           <div class="order-cluster">
             ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
-            <span class="order-num">${cardIdx+1}</span>
+            <span class="order-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>
           </div>
           <div class="job-title-block">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;">
               <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</div>
-              ${isPriority ? `<span class="badge" style="background:var(--clay-soft);color:var(--clay);flex-shrink:0;font-size:10px;font-weight:700;">당일</span>` : ''}
               ${assignedSt ? `<span class="worker-badge">${esc(assignedSt.name)}</span>` : ''}
               ${tasks.filter(t=>t.done).map(t=>`<span class="badge" style="background:var(--teal-soft);color:var(--teal);flex-shrink:0;">${taskIcon(t.text)}</span>`).join('')}
             </div>
