@@ -251,8 +251,8 @@
   .excluded-item{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--ink-soft);padding:4px 0;}
   .excluded-meta{font-size:11px;font-family:var(--mono);}
   .job-name{font-family:var(--serif);font-size:16px;font-weight:700;}
-  .qchk{display:inline-flex;gap:4px;flex-shrink:0;}
-  .qb{border:none;background:transparent;border-radius:8px;padding:2px 5px;font-size:15px;line-height:1.3;cursor:pointer;opacity:.28;filter:grayscale(1);}
+  .qchk{display:inline-flex;gap:2px;flex-shrink:0;}
+  .qb{border:none;background:transparent;border-radius:8px;padding:1px 4px;font-size:15px;line-height:1.3;cursor:pointer;opacity:.28;filter:grayscale(1);}
   .qb.on{background:var(--teal-soft);opacity:1;filter:none;}
   .eta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
   .eta.warn{color:#B3321A;font-weight:700;}
@@ -2436,9 +2436,9 @@ function renderScheduleCards(){
             <span class="order-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>
           </div>
           <div class="job-title-block">
-            <div style="display:flex;align-items:center;gap:6px;min-width:0;">
-              <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</div>
-              ${assignedSt ? `<span class="worker-badge">${esc(assignedSt.name)}</span>` : ''}
+            <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</div>
+            <div style="display:flex;align-items:center;gap:6px;min-width:0;margin-top:3px;">
+              ${assignedSt ? `<span class="worker-badge">${esc(assignedSt.name)}</span>` : '<span class="worker-badge" style="opacity:.5;">미배정</span>'}
               <span class="qchk">${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span>
             </div>
           </div>
@@ -2501,9 +2501,9 @@ function renderScheduleCards(){
     ${COMPANY_MODE ? '' : (state.selectedDate <= todayStr() ? renderClockCard() : renderClockReadOnly())}
     <div class="summary">
       <div class="count-row">
-        <div class="count-item">🧺 세탁 <span>${washDoneCount}</span>/${washTotal}</div>
-        <div class="count-item">🚚 전달 <span>${laundryDoneCount}</span>/${laundryTotal}</div>
-        <div class="count-item">✅ 청소 <span>${conditionDoneCount}</span>/${conditionTotal}</div>
+        <div class="count-item">🧺 <span>${washDoneCount}</span>/${washTotal}</div>
+        <div class="count-item">🚚 <span>${laundryDoneCount}</span>/${laundryTotal}</div>
+        <div class="count-item">✅ <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
           <button id="suggestOrderBtn" title="체크인 시간 순서로 정렬">🔢</button>
