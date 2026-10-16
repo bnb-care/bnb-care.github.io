@@ -2482,14 +2482,14 @@ function renderScheduleCards(){
               <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">${esc(p.name)}</div>
               ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}</span>` : ''}
             </div>
-            <div style="margin-top:3px;"><span class="qchk">${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span></div>
+            <div style="margin-top:3px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span></div>
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
         </div>
         <div class="job-detail">
           <div class="meta-line">
             <div class="meta-addr">${esc(p.address)}</div>
-            <div class="meta-sub"><span>OUT ${esc(p.out)} · IN ${esc(p.in)}${p.rooms ? ` · 룸/화장실 ${esc(p.rooms)}` : ''}${p.beds ? ` · ${esc(p.beds)}` : ''}</span>${isAdmin() ? `<button class="priority-toggle ${isPriority?'active':''}" data-toggle-priority="${id}">🔴 당일</button>` : ''}</div>
+            <div class="meta-sub"><span>OUT ${esc(p.out)} · IN ${esc(p.in)}${p.rooms ? ` · 룸/화장실 ${esc(p.rooms)}` : ''}${p.beds ? ` · ${esc(p.beds)}` : ''}</span></div>
           </div>
           <!-- 날짜 이동 버튼: 지금은 안 써서 숨김 (필요하면 <button class="priority-toggle" data-move-date="${id}">📅 날짜 이동</button> 다시 추가) -->
           ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? `<div class="pw-row">
