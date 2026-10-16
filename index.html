@@ -145,7 +145,8 @@
   .job-title-block{display:flex;flex-direction:column;min-width:0;flex:1;}
   .job-detail{display:none;}
   .job-card.open .job-detail{display:block;}
-  .drag-handle{width:36px;height:46px;margin:-8px 0;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab;flex-shrink:0;-webkit-user-select:none;user-select:none;}
+  .drag-handle{width:36px;height:46px;margin:-8px 0;display:flex;align-items:center;justify-content:center;touch-action:pan-y;cursor:grab;flex-shrink:0;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .drag-handle.arming i{opacity:1;transform:scale(1.2);transition:transform .2s;}
   .drag-handle i{display:block;width:14px;height:22px;background-image:radial-gradient(circle,var(--ink-soft) 1.7px,transparent 1.9px);background-size:7px 7px;opacity:.7;}
   .job-card.dragging{position:relative;z-index:50;box-shadow:0 10px 28px rgba(0,0,0,.22);transition:none;}
   .job-card.shifting{transition:transform .15s ease;}
@@ -3490,7 +3491,7 @@ async function togglePriority(id){
 function setupCardDrag(){
   document.querySelectorAll('.drag-handle').forEach(h=>{
     h.onclick = (ev)=> ev.stopPropagation();
-    h.onpointerdown = (ev)=>{
+    const startDrag = (ev)=>{
       if(ev.button !== undefined && ev.button !== 0) return;
       const id = h.dataset.drag;
       const card = h.closest('.job-card');
@@ -3532,9 +3533,12 @@ function setupCardDrag(){
         raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
+      const blockScroll = (e)=>{ if(e.cancelable) e.preventDefault(); };
+      document.addEventListener('touchmove', blockScroll, {passive:false});
       h.onpointermove = (e)=>{ lastY = e.clientY; update(); };
       const finish = async (cancel)=>{
         h.onpointermove = null; h.onpointerup = null; h.onpointercancel = null;
+        document.removeEventListener('touchmove', blockScroll);
         if(raf) cancelAnimationFrame(raf);
         cards.forEach(c=>{ c.style.transform=''; c.classList.remove('dragging','shifting'); });
         if(!cancel && target !== from){
@@ -3546,6 +3550,22 @@ function setupCardDrag(){
       };
       h.onpointerup = ()=> finish(false);
       h.onpointercancel = ()=> finish(true);
+    };
+    // 실수로 스치기만 해도 순서가 바뀌지 않게: 터치는 0.35초 꾹 눌러야 끌기가 시작돼
+    h.onpointerdown = (ev)=>{
+      if(ev.button !== undefined && ev.button !== 0) return;
+      const pid = ev.pointerId, x0 = ev.clientX, y0 = ev.clientY;
+      let ly = y0, timer = null;
+      const stop = ()=>{ clearTimeout(timer); h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', stop); h.removeEventListener('pointercancel', stop); h.classList.remove('arming'); };
+      const mv = (e)=>{ ly = e.clientY; if(Math.hypot(e.clientX-x0, e.clientY-y0) > 8) stop(); };
+      h.addEventListener('pointermove', mv); h.addEventListener('pointerup', stop); h.addEventListener('pointercancel', stop);
+      const go = ()=>{
+        stop();
+        startDrag({ button:0, pointerId:pid, clientY:ly, preventDefault(){} });
+      };
+      if(ev.pointerType === 'mouse'){ go(); return; }
+      h.classList.add('arming');
+      timer = setTimeout(go, 350);
     };
   });
 }
