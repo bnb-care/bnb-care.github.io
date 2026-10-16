@@ -2944,8 +2944,38 @@ function openEditSheet(prop){
     }
     await saveProperties();
     root.remove();
+    let applied = 0;
+    if(e.id){ try{ applied = await applyPropToFuture(e.id); }catch(err){} }
     render();
+    if(applied) alert('오늘 이후 일정 '+applied+'곳에도 반영했어.');
   };
+}
+
+// 숙소 설정(항상 당일·체크할 항목)을 오늘 이후에 이미 만들어 둔 일정에도 반영
+async function applyPropToFuture(pid){
+  const p = propById(pid); if(!p) return 0;
+  let keys = [];
+  try{ const res = await window.storage.list('today:', false); keys = (res && res.keys) || []; }catch(e){}
+  const today = todayStr(); const ALL = ['세탁 완료','세탁물 전달','컨디션 체크'];
+  const want = tasksForProperty(p); let n = 0;
+  for(const k of keys){
+    const ds = k.replace('today:',''); if(ds < today) continue;
+    let rec = null;
+    try{ const x = await window.storage.get('today:'+ds, false); if(!x || !x.value) continue; rec = JSON.parse(x.value); }catch(e){ continue; }
+    if(!(rec.propertyIds||[]).includes(pid)) continue;
+    const before = JSON.stringify([rec.priorityIds||[], (rec.tasks||{})[pid]||[]]);
+    rec.priorityIds = rec.priorityIds || [];
+    if(p.alwaysPriority && !rec.priorityIds.includes(pid)) rec.priorityIds.push(pid);
+    rec.tasks = rec.tasks || {};
+    let next = (rec.tasks[pid]||[]).filter(t=> !ALL.includes(t.text) || want.includes(t.text) || t.done);
+    want.forEach(t=>{ if(!next.some(x=>x.text===t)) next.push({text:t, done:false}); });
+    next.sort((a,b)=> (ALL.indexOf(a.text)<0?9:ALL.indexOf(a.text)) - (ALL.indexOf(b.text)<0?9:ALL.indexOf(b.text)));
+    rec.tasks[pid] = next;
+    if(JSON.stringify([rec.priorityIds, next]) === before) continue;
+    try{ await window.storage.set('today:'+ds, JSON.stringify(rec), false); n++; }catch(e){}
+  }
+  if(n && state.selectedDate) await loadTodayRecord();
+  return n;
 }
 
 let kakaoSDKPromise = null;
