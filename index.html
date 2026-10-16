@@ -121,11 +121,11 @@
   .job-card{
     background:var(--surface);border:1px solid var(--paper-line);
     
-    border-radius:var(--radius);padding:14px;margin-bottom:12px;
+    border-radius:var(--radius);padding:12px 12px 12px 10px;margin-bottom:12px;
   }
-  .job-card.done{border-left:4px solid var(--teal);opacity:0.72;}
+  .job-card.done{background:#E6F3EC;border-color:#BFDCCB;}
   /* 당일 표시는 번호 동그라미(빨강)로 하고, 왼쪽 막대는 대표 색/회색 그대로 둠 */
-  .job-head{display:flex;align-items:center;gap:10px;cursor:pointer;}
+  .job-head{display:flex;align-items:center;gap:6px;cursor:pointer;}
   .job-addr-inline{
     display:block;font-size:12px;color:var(--teal);text-decoration:none;margin-top:2px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -136,12 +136,12 @@
   .meta-addr{color:var(--teal);margin-bottom:4px;font-size:inherit;}
   .meta-sub{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:inherit;}
   .meta-sub span{min-width:0;}
-  .order-cluster{display:flex;flex-direction:row;align-items:center;gap:4px;flex-shrink:0;}
+  .order-cluster{display:flex;flex-direction:row;align-items:center;gap:0;flex-shrink:0;}
   .order-num{
-    flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--ink);color:#fff;
-    font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;min-width:14px;height:24px;color:var(--ink);
+    font-family:var(--serif);font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;
   }
-  .order-num.pri{background:var(--clay);}
+  .order-num.pri{color:var(--clay);}
   .job-title-block{display:flex;flex-direction:column;min-width:0;flex:1;}
   .job-detail{display:none;}
   .job-card.open .job-detail{display:block;}
@@ -218,9 +218,10 @@
   .wash-btn.on{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:700;}
   .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
   .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
-  .cc-cell{background:var(--surface);min-height:58px;padding:4px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;}
+  .cc-cell{background:var(--surface);min-height:58px;padding:4px 2px 4px 5px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:3px;}
+  .cc-dow{text-align:left;padding-left:6px;}
   .cc-cell.out{background:#F7F8F4;} .cc-cell.out .n{opacity:.35;}
-  .cc-cell .n{font-size:13px;font-weight:700;min-width:22px;text-align:center;border-radius:11px;padding:1px 0;}
+  .cc-cell .n{font-size:13px;font-weight:700;min-width:22px;text-align:center;margin-left:-3px;border-radius:11px;padding:1px 0;}
   .cc-cell.today .n{background:var(--teal);color:#fff;}
   .cal-cell.today{background:#E3F0FB;box-shadow:inset 0 0 0 2px #2F6FB0;}
   .cal-cell.today .dn b{background:#2F6FB0;}
@@ -230,7 +231,7 @@
   .cc-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;background:#F1F7F5;}
   .cc-cell .dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:100%;padding:0 2px;}
   .cc-cell .dots i{width:7px;height:7px;border-radius:50%;background:#bbb;display:block;}
-  .cc-cell .cn{font-size:13px;font-weight:700;color:var(--ink-soft);line-height:1;}
+  .cc-cell .cn{padding-left:1px;font-size:13px;font-weight:700;color:var(--ink-soft);line-height:1;}
   .cc-cell .cn b{font-size:12px;}
   .cc-panel{margin-top:12px;}
   .cc-panel .ph{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
@@ -1308,7 +1309,7 @@ function calPickedDay(year, month){
 function renderCompactCal(head, year, month, first, days, tStr){
   const pick = calPickedDay(year, month);
   let cells = '';
-  ['일','월','화','수','목','금','토'].forEach((n,i)=>{ cells += `<div class="cal-dow ${i===0?'red':i===6?'blue':''}">${n}</div>`; });
+  ['일','월','화','수','목','금','토'].forEach((n,i)=>{ cells += `<div class="cal-dow cc-dow ${i===0?'red':i===6?'blue':''}">${n}</div>`; });
   const startDate = new Date(year, month, 1 - first);
   const rowsNeeded = Math.ceil((first + days) / 7);
   for(let i=0; i<rowsNeeded*7; i++){
@@ -1320,7 +1321,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     const dots = chips.slice(0,6).map(c=>`<i></i>`).join('');
     cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
-      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn">${chips.length}${chips.filter(c=>c.pri).length?` <b style="color:var(--clay);">●${chips.filter(c=>c.pri).length}</b>`:''}</span>`:''}</div>`;
+      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn">${chips.length}</span>`:''}</div>`;
   }
   const rec = state.monthRecords[pick];
   const chips = rec ? chipsFor(rec) : [];
@@ -2522,7 +2523,6 @@ function renderScheduleCards(){
       <div class="job-card ${isDone?'done':''} ${isPriority && !isDone ?'priority':''} ${state.openJobIds.has(id)?'open':''}" style="">
         <div class="job-head" data-toggle-job="${id}">
           <div class="order-cluster">
-            ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
             <span class="order-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>
           </div>
           <div class="job-title-block">
@@ -2533,6 +2533,7 @@ function renderScheduleCards(){
             <div style="margin-top:3px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span></div>
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
+          ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
         </div>
         <div class="job-detail">
           <div class="meta-line">
