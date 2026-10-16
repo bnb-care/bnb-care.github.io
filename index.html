@@ -2166,10 +2166,10 @@ function triggerCompletionReport(propertyId){
     try{
       const files = await collectPhotoFiles(propertyId);
       if(files.length && navigator.canShare && navigator.canShare({ files })){
-        await navigator.share({ files, title: '컨디션체크 완료', text: message });
+        await navigator.share({ files, text: message });
       } else if(navigator.share){
         if(files.length) alert('이 기기에서는 사진 공유가 안 돼서 문구만 보낼게.');
-        await navigator.share({ title: '컨디션체크 완료', text: message });
+        await navigator.share({ text: message });
       } else {
         alert('이 브라우저에서는 자동 공유가 안 돼. 아래 문구를 복사해서 직접 보내줘.\n\n' + message);
       }
@@ -2193,7 +2193,7 @@ function triggerLaundryReport(){
   (async ()=>{
     try{
       if(navigator.share){
-        await navigator.share({ title: '완료 보고', text: message });
+        await navigator.share({ text: message });
       } else {
         alert('이 브라우저에서는 자동 공유가 안 돼. 아래 문구를 복사해서 직접 보내줘.\n\n' + message);
       }
@@ -2532,7 +2532,7 @@ function renderScheduleCards(){
               <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"><span class="jn-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>${nameHtml(p.name)}</div>
               ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}</span>` : ''}
             </div>
-            <div style="margin-top:3px;margin-left:13px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span></div>
+            <div style="margin-top:3px;margin-left:13px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}${conditionTask ? `<button class="qb ${conditionDone?'on':''}" data-stop-toggle="1" ${conditionDone?`data-report="${id}"`:''} title="${conditionDone ? '완료 보고하기'+(lastReportFor(id)?' (최근 보고 '+formatSendTime(lastReportFor(id).ts)+')':'') : '컨디션 체크를 마치면 보고할 수 있어'}">📨</button>` : ''}</span></div>
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
           ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
@@ -2572,12 +2572,6 @@ function renderScheduleCards(){
             </div>
           </div>` : ''}
           ${isAdmin() ? missingRow : ''}
-          ${conditionDone ? `
-          <div class="job-row" style="margin-top:10px;">
-            <button class="pill-btn" data-report="${id}" style="background:var(--teal-soft);color:var(--teal);">📨 완료 보고하기${(state.photos[id]||[]).length ? ' (사진 '+(state.photos[id]||[]).length+'장 포함)' : ''}</button>
-          </div>
-          ${lastReportFor(id) ? `<div class="task-meta">최근 보고: ${formatSendTime(lastReportFor(id).ts)}</div>` : ''}
-          ` : ''}
           ${isAdmin() ? `<div style="text-align:right;margin-top:6px;"><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
         </div>
       </div>
