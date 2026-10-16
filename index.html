@@ -2541,13 +2541,13 @@ function renderScheduleCards(){
           </div>
           <!-- 날짜 이동 버튼: 지금은 안 써서 숨김 (필요하면 <button class="priority-toggle" data-move-date="${id}">📅 날짜 이동</button> 다시 추가) -->
           ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? `<div class="pw-row">
-            <span class="pw-icon">🔓</span>
+            <span class="pw-icon">🔑</span>
             <input class="pw-edit" data-day-pass="${id}" value="${esc(dayPassVal)}" placeholder="${/^망원(동)?\s*2룸/.test(p.name||'') ? '앞 손님 체크인 날짜 (예: 1015*)' : '오늘 비번 (체크아웃) — 대표 문자 받으면 입력'}">
           </div>${/^망원(동)?\s*2룸/.test(p.name||'') ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}` : ''}
-          <div class="pw-row">
+          ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? '' : `<div class="pw-row">
             <span class="pw-icon">🔑</span>
             <input class="pw-edit" data-pw-edit="${id}" value="${esc(p.password)}" placeholder="비밀번호 없음">
-          </div>
+          </div>`}
           <div class="notes-row">
             <span class="pw-icon">📋</span>
             <textarea class="notes-edit" data-notes-edit="${id}" placeholder="참고사항 없음">${esc(p.notes)}</textarea>
