@@ -1859,10 +1859,10 @@ function groupOf(p){
 }
 function barStyle(p){ return ''; }
 function ownerStyle(p, tint){
-  if(!p) return '';
+  if(!p) return 'padding-left:21px;';
   let c = OWNER_COLORS[String(p.owner||'').trim()];
   if(!c){ const gi = groupOf(p); if(gi>=0) c = GROUP_COLORS[gi]; }
-  if(!c) return '';
+  if(!c) return 'padding-left:21px;';
   return `border-left:8px solid ${c.bar};` + (tint ? `background:${c.bg};` : '');
 }
 // 숙소 탭 정렬: 색(대표)별로 묶고, 그 안에서 이름순. 색 없는 건 맨 아래(대표/전화번호별)
