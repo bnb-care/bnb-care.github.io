@@ -64,12 +64,12 @@
   /* summary bar */
   .summary{
     background:var(--surface);border:1px solid var(--paper-line);
-    border-radius:var(--radius);padding:12px 14px;margin-bottom:12px;
+    border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;
   }
   .summary .date{font-size:12px;color:var(--ink-soft);}
   .summary .count{font-family:var(--serif);font-size:20px;font-weight:700;margin-top:2px;}
   .summary .count span{color:var(--teal);}
-  .count-row{display:flex;align-items:center;gap:6px 12px;margin-top:6px;flex-wrap:wrap;}
+  .count-row{display:flex;align-items:center;gap:6px 12px;margin-top:0;flex-wrap:wrap;}
   .count-item{font-family:var(--serif);font-size:17px;font-weight:700;color:var(--ink);}
   .count-item span{color:var(--teal);}
   .summary-actions{display:flex;gap:6px;margin-left:auto;}
@@ -142,6 +142,8 @@
     font-family:var(--serif);font-size:14.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
   }
   .order-num.pri{color:var(--clay);}
+  .jn-num{display:inline-block;width:18px;color:var(--ink);}
+  .jn-num.pri{color:var(--clay);}
   .job-title-block{display:flex;flex-direction:column;min-width:0;flex:1;}
   .job-detail{display:none;}
   .job-card.open .job-detail{display:block;}
@@ -2522,15 +2524,12 @@ function renderScheduleCards(){
     return `
       <div class="job-card ${isDone?'done':''} ${isPriority && !isDone ?'priority':''} ${state.openJobIds.has(id)?'open':''}" style="">
         <div class="job-head" data-toggle-job="${id}">
-          <div class="order-cluster">
-            <span class="order-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>
-          </div>
           <div class="job-title-block">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;height:24px;">
-              <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">${esc(p.name)}</div>
+              <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"><span class="jn-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>${esc(p.name)}</div>
               ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}</span>` : ''}
             </div>
-            <div style="margin-top:3px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span></div>
+            <div style="margin-top:3px;margin-left:13px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span></div>
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
           ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
@@ -3064,12 +3063,15 @@ async function setupMapIfNeeded(){
       infowindow.open(map, marker);
     });
     {
-      const navUrl2 = `https://map.kakao.com/link/to/${encodeURIComponent(p.name)},${coord.lat},${coord.lng}`;
       const idx = state.mapScope === 'today' ? targetIds.indexOf(p.id) + 1 : 0;
-      new kakao.maps.CustomOverlay({
-        position: pos, map, yAnchor: 2.3, clickable: true,
-        content: `<a href="${navUrl2}" target="_blank" rel="noopener" style="display:block;background:#fff;color:#1f2a24;border:1px solid #bbb;font-size:11px;font-weight:700;padding:3px 7px;border-radius:6px;white-space:nowrap;text-decoration:none;box-shadow:0 1px 3px rgba(0,0,0,.2);">${idx?idx+'. ':''}${esc(p.name)} 🧭</a>`
-      });
+      if(idx){
+        const isPri = ((state.todayRecord||{}).priorityIds||[]).includes(p.id);
+        const el = document.createElement('div');
+        el.textContent = idx;
+        el.style.cssText = 'width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 12px/1 sans-serif;color:#fff;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.35);cursor:pointer;background:'+(isPri?'#A6432A':'#1f2a24')+';';
+        el.onclick = ()=> kakao.maps.event.trigger(marker, 'click');
+        new kakao.maps.CustomOverlay({ position: pos, map, yAnchor: 2.6, clickable: true, content: el });
+      }
     }
     bounds.extend(pos);
     placed++;
@@ -3082,7 +3084,7 @@ async function setupMapIfNeeded(){
       const companyLabel = state.companyLocation.name || '회사';
       const label = new kakao.maps.CustomOverlay({
         position: pos, map, yAnchor: 1.4,
-        content: `<div style="background:#A6432A;color:#fff;font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;white-space:nowrap;">🏢 ${esc(companyLabel)}</div>`
+        content: `<div style="background:#A6432A;color:#fff;font-size:12px;line-height:1;padding:4px 5px;border-radius:6px;">🏢</div>`
       });
       const companyMarker = new kakao.maps.Marker({ position: pos, map });
       kakao.maps.event.addListener(companyMarker, 'click', ()=>{
