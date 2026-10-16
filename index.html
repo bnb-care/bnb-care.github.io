@@ -512,7 +512,18 @@ window.storage = {
     }
     return localStore.delete(key);
   },
-  async list(prefix, shared){ return localStore.list(prefix); }
+  async list(prefix, shared){
+    if(CLOUD_ENABLED && prefix && prefix.startsWith('today:') && cloud && cloud.user){
+      try{
+        const q = cloud.fn.query(cloud.fn.collection(cloud.db,'kv'),
+          cloud.fn.where(cloud.fn.documentId(),'>=',prefix), cloud.fn.where(cloud.fn.documentId(),'<=',prefix+'\uf8ff'));
+        const snap = await cloud.fn.getDocs(q);
+        const keys = []; snap.forEach(d=>keys.push(d.id));
+        return { keys, prefix };
+      }catch(e){}
+    }
+    return localStore.list(prefix);
+  }
 };
 async function initCloud(){
   const base = 'https://www.gstatic.com/firebasejs/'+FB_VER;
