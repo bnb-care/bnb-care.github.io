@@ -2548,7 +2548,7 @@ function renderScheduleCards(){
         <div class="count-item">✅ <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
-          <button id="suggestOrderBtn" title="체크인 시간 순서로 정렬">🔢</button>
+          <button id="suggestOrderBtn" title="당일체크인 먼저 · 체크인 시간 순 정렬">🔢</button>
           <button id="openEditToday" title="숙소 추가제외">➕</button>
           ${state.staff.length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
           <!-- 초기화(🔄) 버튼: 지금은 안 써서 숨김 (필요하면 <button id="relist" title="초기화">🔄</button> 다시 추가) -->` : ''}
@@ -3544,10 +3544,11 @@ async function suggestOrder(){
   const main = ids.filter(id=>{ const p=propById(id); return p && !isPickupOnly(p); });
   const rest = ids.filter(id=>!main.includes(id));
   const inOf = id=>{ const t=parseClockMin(propById(id).in); return t==null?9999:t; };
-  main.sort((a,b)=> (inOf(a)-inOf(b)) || (cleanMinutes(propById(b))-cleanMinutes(propById(a))));
+  const pri = new Set(r.priorityIds||[]);
+  main.sort((a,b)=> ((pri.has(b)?1:0)-(pri.has(a)?1:0)) || (inOf(a)-inOf(b)) || (cleanMinutes(propById(b))-cleanMinutes(propById(a))));
   if(!main.length){ alert('순서를 정할 숙소가 없어.'); return; }
   const lines = main.map((id,i)=>{ const p=propById(id), t=parseClockMin(p.in); return `${i+1}. ${p.name}`; }).join('\n');
-  if(!confirm('체크인 시간이 빠른 순서로 정렬할까?\n(같으면 청소시간이 긴 곳 먼저)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
+  if(!confirm('당일체크인 먼저, 그다음 체크인 시간이 빠른 순서로 정렬할까?\n(같으면 청소시간이 긴 곳 먼저)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
   r.propertyIds = main.concat(rest);
   await saveTodayRecord(); render();
 }
