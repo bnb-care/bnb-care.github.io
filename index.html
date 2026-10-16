@@ -1442,7 +1442,11 @@ function parseScheduleText(text, defYear){
     const ds = y+'-'+pad2(Number(m[2]))+'-'+pad2(Number(m[3]));
     m[4].split(/[,，]/).map(x=>x.trim()).filter(Boolean).forEach(it=>{
       const parts = it.split('|');
-      (out[ds] = out[ds] || []).push({ raw: parts[0].trim(), note: parts.slice(1).join('|').trim() });
+      let raw = parts[0].trim().replace(/^[\-–•·*▶▷\s]+/, '');
+      const today = /_?\s*당일|\(당일\)/.test(raw);
+      raw = raw.replace(/_?\s*당일/g,'').replace(/\((?:수정|추가|변경|취소)\)/g,'').replace(/[_\s]+$/,'').trim();
+      if(!raw) return;
+      (out[ds] = out[ds] || []).push({ raw, today, note: parts.slice(1).join('|').trim() });
     });
   });
   return out;
@@ -1646,11 +1650,14 @@ function openImportSheet(){
         data[ds].forEach(e=>{
           const id = map[e.raw];
           if(!id){ skipped++; return; }
-          if(rec.propertyIds.includes(id)){ exist++; return; }
+          if(rec.propertyIds.includes(id)){
+            if(e.today && !rec.priorityIds.includes(id)){ rec.priorityIds.push(id); changed = true; }
+            exist++; return;
+          }
           const pr = propById(id);
           rec.propertyIds.push(id);
           rec.tasks[id] = tasksForProperty(pr).map(text=>({text, done:false}));
-          if(pr && pr.alwaysPriority && !rec.priorityIds.includes(id)) rec.priorityIds.push(id);
+          if(((pr && pr.alwaysPriority) || e.today) && !rec.priorityIds.includes(id)) rec.priorityIds.push(id);
           rec.excludedIds = rec.excludedIds.filter(x=>x.id!==id);
           if(e.note){ rec.dayNotes = rec.dayNotes || {}; rec.dayNotes[id] = e.note; }
           added++; changed = true;
@@ -2616,7 +2623,7 @@ function renderMapTab(){
     </div>
     <div id="kakaoMapDiv"></div>
     <div class="map-hint">
-      핀을 누르면 업체 이름이 떠. 주소가 바뀌었거나 위치가 이상하면 숙소 탭에서 주소를 다시 확인해줘.
+      핀 위의 이름표를 누르면 바로 길찾기로 연결돼. 주소가 바뀌었거나 위치가 이상하면 숙소 탭에서 주소를 다시 확인해줘.
       ${state.companyLocation && state.companyLocation.carPlate ? `<div style="margin-top:6px;">🚗 회사차: <b style="color:var(--ink);">${esc(state.companyLocation.carPlate)}</b></div>` : ''}
       <div class="link-row">
         <button id="setCompanyLocation">🏢 회사 위치 ${state.companyLocation ? '수정' : '등록'}</button>
@@ -2971,6 +2978,14 @@ async function setupMapIfNeeded(){
       `);
       infowindow.open(map, marker);
     });
+    {
+      const navUrl2 = `https://map.kakao.com/link/to/${encodeURIComponent(p.name)},${coord.lat},${coord.lng}`;
+      const idx = state.mapScope === 'today' ? targetIds.indexOf(p.id) + 1 : 0;
+      new kakao.maps.CustomOverlay({
+        position: pos, map, yAnchor: 2.3, clickable: true,
+        content: `<a href="${navUrl2}" target="_blank" rel="noopener" style="display:block;background:#fff;color:#1f2a24;border:1px solid #bbb;font-size:11px;font-weight:700;padding:3px 7px;border-radius:6px;white-space:nowrap;text-decoration:none;box-shadow:0 1px 3px rgba(0,0,0,.2);">${idx?idx+'. ':''}${esc(p.name)} 🧭</a>`
+      });
+    }
     bounds.extend(pos);
     placed++;
   }
