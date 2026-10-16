@@ -2540,7 +2540,6 @@ function renderScheduleCards(){
             <div class="meta-addr">${esc(p.address)}</div>
             <div class="meta-sub"><span>OUT ${esc(p.out)} · IN ${esc(p.in)}${p.rooms ? ` · 룸/화장실 ${esc(p.rooms)}` : ''}${p.beds ? ` · ${esc(p.beds)}` : ''}</span></div>
           </div>
-          ${isAdmin() ? `<div style="margin:2px 0 8px;"><button class="priority-toggle" data-remove-job="${id}">🗑 이 날짜에서 빼기</button></div>` : ''}
           <!-- 날짜 이동 버튼: 지금은 안 써서 숨김 (필요하면 <button class="priority-toggle" data-move-date="${id}">📅 날짜 이동</button> 다시 추가) -->
           ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? `<div class="pw-row">
             <span class="pw-icon">🔓</span>
@@ -2584,6 +2583,7 @@ function renderScheduleCards(){
           </div>
           ${lastReportFor(id) ? `<div class="task-meta">최근 보고: ${formatSendTime(lastReportFor(id).ts)}</div>` : ''}
           ` : ''}
+          ${isAdmin() ? `<div style="text-align:right;margin-top:6px;"><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
         </div>
       </div>
     `;
