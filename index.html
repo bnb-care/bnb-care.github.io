@@ -209,6 +209,9 @@
   .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
   .wk-chip{display:flex;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
   .wk-chip.done{background:var(--teal-soft,#dcebe7);}
+  .wk-chip.cp-row{background:var(--surface);border:1px solid var(--paper-line);}
+  .wk-chip.cp-row.washed{background:#E6F3EC;border-color:#BFDCCB;}
+  .wk-chip.cp-row .order-num{flex-shrink:0;}
   .wk-chip .nm{flex:1;min-width:0;font-weight:600;}
   .wash-btn{flex-shrink:0;font-size:13px;line-height:1;padding:6px 9px;border-radius:14px;border:1px solid var(--paper-line);background:var(--surface);color:var(--ink-soft);cursor:pointer;font-family:var(--sans);}
   .wash-btn.on{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:700;}
@@ -226,7 +229,8 @@
   .cc-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;background:#F1F7F5;}
   .cc-cell .dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:100%;padding:0 2px;}
   .cc-cell .dots i{width:7px;height:7px;border-radius:50%;background:#bbb;display:block;}
-  .cc-cell .cn{font-size:10px;font-weight:700;color:var(--ink-soft);line-height:1;}
+  .cc-cell .cn{font-size:13px;font-weight:700;color:var(--ink-soft);line-height:1;}
+  .cc-cell .cn b{font-size:12px;}
   .cc-panel{margin-top:12px;}
   .cc-panel .ph{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
   .cc-panel .ph b{font-size:16px;flex:1;}
@@ -1315,13 +1319,13 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     const dots = chips.slice(0,6).map(c=>`<i></i>`).join('');
     cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
-      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<div class="dots">${dots}</div><span class="cn">${chips.length}${chips.filter(c=>c.pri).length?` <b style="color:var(--clay);">●${chips.filter(c=>c.pri).length}</b>`:''}</span>`:''}</div>`;
+      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn">${chips.length}${chips.filter(c=>c.pri).length?` <b style="color:var(--clay);">●${chips.filter(c=>c.pri).length}</b>`:''}</span>`:''}</div>`;
   }
   const rec = state.monthRecords[pick];
   const chips = rec ? chipsFor(rec) : [];
   const [py,pm,pd] = pick.split('-').map(Number); const pw = new Date(py,pm-1,pd).getDay(); const hn = holidayName(pick);
-  const list = chips.length ? chips.map(c=>{ const p = propById(c.id);
-      return `<div class="wk-chip ${c.done?'done':''}" style="background:var(--surface);border:1px solid var(--paper-line);"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}${washBtn(pick,c)}</div>`; }).join('')
+  const list = chips.length ? chips.map((c,i)=>
+      `<div class="wk-chip cp-row ${c.wash?'washed':''}"><span class="order-num ${c.pri?'pri':''}">${i+1}</span><span class="nm">${esc(c.name)}</span>${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${washBtn(pick,c)}</div>`).join('')
     : '<div class="wk-empty">일정 없음</div>';
   const pastCls = pick < todayStr() ? 'past' : '';
   return head + `<div class="mc-grid">${cells}</div>
