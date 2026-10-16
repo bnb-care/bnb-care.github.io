@@ -623,7 +623,7 @@ async function fillPassSuggestions(){
     const code = prev.slice(5,7)+prev.slice(8,10)+'*';
     const cur = ((state.todayRecord.dayPass||{})[pid]||'').trim();
     const label = `앞 일정 ${Number(prev.slice(5,7))}/${Number(prev.slice(8,10))} → ${code}`;
-    el.innerHTML = cur===code ? `✅ ${esc(label)} (입력됨)` : `<button type="button" style="border:1px solid var(--paper-line);background:var(--surface);border-radius:8px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer;color:var(--ink);">${esc(label)} 입력</button> <span>확인하고 눌러줘</span>`;
+    el.innerHTML = cur===code ? '' : `<button type="button" style="border:1px solid var(--paper-line);background:var(--surface);border-radius:8px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer;color:var(--ink);">${esc(label)} 입력</button> <span>확인하고 눌러줘</span>`;
     const btn = el.querySelector('button');
     if(btn) btn.onclick = async ()=>{ const r = state.todayRecord; r.dayPass = r.dayPass||{}; r.dayPass[pid] = code; await saveTodayRecord(); render(); };
   }
@@ -2325,7 +2325,8 @@ function taskIcon(text){
 }
 function tasksForProperty(p){
   // 체크리스트는 고정 2항목. 참고사항은 별도로 그냥 텍스트로만 보여줌.
-  return ['세탁 완료','세탁물 전달','컨디션 체크'];
+  const off = (p && p.noTasks) || [];
+  return ['세탁 완료','세탁물 전달','컨디션 체크'].filter(t=>!off.includes(t));
 }
 
 function renderDateLabel(){
@@ -2513,12 +2514,11 @@ function renderScheduleCards(){
           <div class="box">${t.done?'✓':''}</div>
           <div class="ttext">${esc(t.text)}</div>
         </div>
-        ${isAdmin() ? `<button class="task-remove" data-remove-task="${id}:${idx}" title="이 업체에서 항목 빼기">✕</button>` : ''}
       </div>
     `).join('');
     const conditionTask = tasks.find(t=>t.text.includes('컨디션') || t.text.includes('사진'));
     const conditionDone = conditionTask ? conditionTask.done : false;
-    const missingTasks = ['세탁 완료','세탁물 전달','컨디션 체크'].filter(txt => !tasks.some(t=>t.text===txt));
+    const missingTasks = ['세탁 완료','세탁물 전달','컨디션 체크'].filter(txt => !tasks.some(t=>t.text===txt) && !(p.noTasks||[]).includes(txt));
     const missingRow = missingTasks.length ? `
       <div class="task-missing-row">
         ${missingTasks.map(txt=>`<button class="task-add-back" data-add-task="${id}:${txt}">+ ${esc(txt)}</button>`).join('')}
@@ -2559,7 +2559,6 @@ function renderScheduleCards(){
             <span class="pw-icon">👤</span>
             <select data-assign="${id}" ${isAdmin()?'':'disabled'}>${assignOpts}</select>
           </div>
-          ${warns.map(w=>`<div class="warn-line">⚠️ ${esc(w)}</div>`).join('')}
           <div class="notes-row">
             <span class="pw-icon">📝</span>
             <textarea class="day-note" data-daynote="${id}" placeholder="오늘 특이사항 (예: 5시체크인, 비번변경)">${esc(dayNote)}</textarea>
@@ -2572,12 +2571,6 @@ function renderScheduleCards(){
               ${(p.parkingId||p.parkingPw) ? `<span class="pw-value">${esc(p.parkingId)} / ${esc(p.parkingPw)}</span>` : ''}
             </div>
           </div>` : ''}
-          ${CLOUD_ENABLED ? `<div class="photo-strip">${(state.photos[id]||[]).map(t=>`<img class="pthumb" src="${t.thumb}" data-photo="${t.id}">`).join('')}</div>
-          <div class="job-row" style="margin-top:8px;">
-            <button class="pill-btn" data-photo-add="${id}">📷 사진 추가</button>
-          </div>` : ''}
-          <div class="section-divider"></div>
-          <div class="task-list">${taskRows}</div>
           ${isAdmin() ? missingRow : ''}
           ${conditionDone ? `
           <div class="job-row" style="margin-top:10px;">
@@ -2667,23 +2660,17 @@ function renderAll(){
 
   return `
     <input class="search-box" id="searchBox" placeholder="상호명·담당자·주소로 검색" value="${esc(state.search)}">
-    <div style="margin-bottom:12px;">
+    ${COMPANY_MODE ? '' : `<div style="margin-bottom:12px;">
       <button class="relist-btn" id="toggleTools">⚙️ 관리 도구 ${state.toolsOpen ? '▲' : '▼'}</button>
       ${state.toolsOpen ? `
         <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
-          ${isAdmin() ? `<button class="pill-btn" id="bulkParkingBtn">🚗 여러 업체에 주차등록 정보 한번에 적용</button>
-          <button class="pill-btn" id="renamePropsBtn">✏️ 숙소 이름 한번에 정리</button>
-          <button class="pill-btn" id="roomPropsBtn">💬 카톡방 한번에 연결</button>
-          <button class="pill-btn" id="cleanupAddressBtn">🧹 주소 띄어쓰기 한번에 정리</button>
-          ${CLOUD_ENABLED ? `<button class="pill-btn" id="cleanupPhotosBtn">🗑️ 30일 지난 사진 정리</button>
-          <button class="pill-btn" id="uploadLocalBtn">☁️ 이 폰의 데이터를 서버로 올리기</button>` : ''}` : ''}
           ${COMPANY_MODE ? '' : `<button class="pill-btn" id="setHourlyWageBtn">💰 시급 ${state.hourlyWage ? state.hourlyWage.toLocaleString()+'원' : '설정하기'}</button>
           ${state.hourlyWage ? `<div style="font-size:12px;color:var(--ink-soft);padding:0 4px;">이번달 예상 급여: ${formatMinutes(computeThisMonthPay().totalMinutes)} · ${computeThisMonthPay().pay.toLocaleString()}원</div>` : ''}
           <button class="pill-btn" id="exportWorkLogBtn">📤 출퇴근 기록 CSV로 내보내기</button>`}
-          ${CLOUD_ENABLED ? `<button class="pill-btn" id="logoutBtn">🚪 로그아웃 (${esc(cloud&&cloud.user?cloud.user.email:'')})</button>` : ''}
+          ${(CLOUD_ENABLED && !COMPANY_MODE) ? `<button class="pill-btn" id="logoutBtn">🚪 로그아웃 (${esc(cloud&&cloud.user?cloud.user.email:'')})</button>` : ''}
         </div>
       ` : ''}
-    </div>
+    </div>`}
     ${list.length ? cards : `<div class="empty">검색 결과가 없어.<br>다른 검색어로 찾아봐.</div>`}
   `;
 }
@@ -2904,6 +2891,12 @@ function openEditSheet(prop){
         <div class="field"><label>주차등록 비밀번호</label><input id="f_parkingPw" value="${esc(e.parkingPw||'')}"></div>
       </div>
       <div class="field"><label>청소시간(분) · 비우면 크기로 자동 계산</label><input id="f_cleanMin" inputmode="numeric" value="${esc(e.cleanMin||'')}" placeholder="예: 90"></div>
+      <div class="field" style="margin-top:8px;"><label>체크할 항목 · 이 숙소에 필요한 것만 체크</label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:14px;margin-top:4px;">
+          ${['세탁 완료','세탁물 전달','컨디션 체크'].map(t=>`<label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" data-task-on="${t}" ${(e.noTasks||[]).includes(t)?'':'checked'}>${taskIcon(t)} ${t}</label>`).join('')}
+        </div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-top:4px;">체크를 풀면 앞으로 만드는 일정부터 이 항목이 빠져 (이미 만든 일정은 그대로).</div>
+      </div>
       <label class="picker-row" style="margin-top:4px;">
         <input type="checkbox" id="f_pickupOnly" ${e.pickupOnly?'checked':''}>
         <div style="flex:1;"><div class="pname">세탁물 수거만 (순서 제외)</div><div class="paddr">청소 순서 계산과 예상 시각에서 빠지고 리스트 맨 아래로 가</div></div>
@@ -2939,6 +2932,7 @@ function openEditSheet(prop){
       alwaysPriority: document.getElementById('f_alwaysPriority').checked,
       cleanMin: parseInt(document.getElementById('f_cleanMin').value,10) || 0,
       pickupOnly: document.getElementById('f_pickupOnly').checked,
+      noTasks: Array.from(root.querySelectorAll('[data-task-on]')).filter(c=>!c.checked).map(c=>c.dataset.taskOn),
     };
     if(!vals.name){ alert('상호명은 필수야.'); return; }
     if(e.id){
