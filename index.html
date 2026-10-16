@@ -431,7 +431,7 @@
   .cancel-btn{background:var(--paper);color:var(--ink);border:1px solid var(--paper-line) !important;}
 </style>
 </head>
-<body>
+<body class="company">
 
 <div class="topbar">
   <h1>bnb care</h1>
@@ -479,6 +479,9 @@ window.storage = {
   async get(key, shared){
     if(isSharedKey(key)){
       if(!(cloud && cloud.user)) return null;
+      if(window._bootCacheFirst && cloud.fn.getDocFromCache){
+        try{ const cs = await cloud.fn.getDocFromCache(kvDoc(key)); if(cs.exists()) return { key, value: cs.data().value }; }catch(e){}
+      }
       const snap = await cloud.fn.getDoc(kvDoc(key));
       return snap.exists() ? { key, value: snap.data().value } : null;
     }
@@ -3794,17 +3797,12 @@ async function startApp(){
   state.selectedDate = todayStr();
   try{ let _nw = isNarrowCal(); window.addEventListener('resize', ()=>{ const n = isNarrowCal(); if(n!==_nw){ _nw = n; if(state.tab==='cal') render(); } }); }catch(e){}
   try{ const v = localStorage.getItem('pref:calView'); if(v) state.calView = v; }catch(e){}
-  await loadProperties();
-  await loadStaff();
-  await loadTodayRecord();
-  await loadKakaoKey();
-  await loadCompanyLocation();
-  await loadHourlyWage();
-  await loadGeocodeCache();
-  await loadPhotoLog();
-  await loadReportLog();
-  await loadWorkLog();
+  window._bootCacheFirst = true; // 앱 켤 때는 저장된 사본을 먼저 보여주고, 최신 내용은 실시간 연결이 곧바로 갱신
+  await Promise.all([loadProperties(), loadStaff(), loadTodayRecord()]);
+  window._bootCacheFirst = false;
   render();
+  await Promise.all([loadKakaoKey(), loadCompanyLocation(), loadHourlyWage(), loadGeocodeCache(), loadPhotoLog(), loadReportLog(), loadWorkLog()]);
+  if(state.tab === 'staff' || state.tab === 'map') render();
   cleanupOldDayPass();
   if(cloud) watchShared();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
