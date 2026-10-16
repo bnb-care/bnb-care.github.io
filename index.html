@@ -1260,10 +1260,36 @@ function washCount(chips){
 function washLabel(chips, pre){
   const w = washCount(chips); return w ? `${pre||''}🧺 ${w.d}/${w.n}` : '';
 }
+// 세탁 세트가 2개(세팅용·세탁용)라서, 같은 숙소는 첫 예약 다음 건을 한 번에 하나만 미리 준비할 수 있음
+async function washBlockedBy(ds, pid){
+  try{
+    const today = todayStr();
+    let keys = []; try{ const r = await window.storage.list('today:', false); keys = (r && r.keys) || []; }catch(e){}
+    const dates = keys.map(k=>k.replace('today:','')).filter(d=>d>=today);
+    if(ds>=today && !dates.includes(ds)) dates.push(ds);
+    const list = [];
+    for(const d of dates.sort()){
+      let rec = null;
+      if(d===state.selectedDate && state.todayRecord) rec = state.todayRecord;
+      else if(state.monthRecords[d]) rec = state.monthRecords[d];
+      else { try{ const x = await window.storage.get('today:'+d, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){} }
+      if(rec && (rec.propertyIds||[]).includes(pid)) list.push({d, rec});
+    }
+    list.sort((a,b)=>a.d.localeCompare(b.d));
+    if(!list.length || list[0].d === ds) return null;
+    const other = list.slice(1).find(x=> x.d!==ds && (x.rec.tasks&&x.rec.tasks[pid]||[]).some(t=>t.text==='세탁 완료' && t.done));
+    return other ? other.d : null;
+  }catch(e){ return null; }
+}
+function washBlockMsg(pid, d){
+  const p = propById(pid); const [,m,dd] = d.split('-').map(Number);
+  return (p?p.name+': ':'')+m+'/'+dd+' 세탁이 이미 준비돼 있어서 그다음 건은 아직 체크할 수 없어.\n(세트가 2개라 한 번에 하나만 미리 준비할 수 있어)';
+}
 async function toggleWash(ds, id){
   const rec = state.monthRecords[ds]; if(!rec) return;
   ensureLaundryStep(rec, ds);
   const t = (rec.tasks[id]||[]).find(x=>x.text==='세탁 완료'); if(!t) return;
+  if(!t.done){ const bl = await washBlockedBy(ds, id); if(bl){ alert(washBlockMsg(id, bl)); return; } }
   t.done = !t.done;
   if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); }
   else { delete t.by; delete t.at; }
@@ -3226,6 +3252,7 @@ function attachHandlers(){
     el.onclick = async ()=>{
       const [id, idx] = el.dataset.task.split(':');
       const t = state.todayRecord.tasks[id][Number(idx)];
+      if(!t.done && t.text==='세탁 완료'){ const bl = await washBlockedBy(state.selectedDate, id); if(bl){ alert(washBlockMsg(id, bl)); return; } }
       t.done = !t.done;
       if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); }
       else { delete t.by; delete t.at; }
