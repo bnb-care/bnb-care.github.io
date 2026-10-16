@@ -142,6 +142,7 @@
     font-family:var(--serif);font-size:14.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
   }
   .order-num.pri{color:var(--clay);}
+  .lat{font-size:.93em;}
   .jn-num{display:inline-block;width:18px;color:var(--ink);}
   .jn-num.pri{color:var(--clay);}
   .job-title-block{display:flex;flex-direction:column;min-width:0;flex:1;}
@@ -2300,6 +2301,8 @@ async function saveTodayRecord(){
   try{ await window.storage.set(todayKey(), raw, false); }catch(e){ alert('서버 저장에 실패했어. 인터넷 연결을 확인해줘.'); }
 }
 
+// 영문 대문자(LG 등)가 한글보다 커 보이는 걸 막기 위해 영문만 살짝 줄임
+function nameHtml(n){ return String(n||'').split(/([A-Za-z]+)/).map((t,i)=> i%2 ? `<span class="lat">${esc(t)}</span>` : esc(t)).join(''); }
 function propById(id){ return state.properties.find(p=>p.id===id); }
 function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -2526,7 +2529,7 @@ function renderScheduleCards(){
         <div class="job-head" data-toggle-job="${id}">
           <div class="job-title-block">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;height:24px;">
-              <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"><span class="jn-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>${esc(p.name)}</div>
+              <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"><span class="jn-num ${isPriority?'pri':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>${nameHtml(p.name)}</div>
               ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}</span>` : ''}
             </div>
             <div style="margin-top:3px;margin-left:13px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}</span></div>
