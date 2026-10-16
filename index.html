@@ -1329,7 +1329,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     : '<div class="wk-empty">일정 없음</div>';
   const pastCls = pick < todayStr() ? 'past' : '';
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일체크인</span></div>
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일</span></div>
     <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${chips.length?`<button data-cal-day="${pick}" title="자세히" aria-label="자세히">🔍</button>`:''}${isAdmin()?`<button data-cal-add="${pick}" title="일정 추가" aria-label="일정 추가">➕</button>`:''}</div>${list}</div>`;
 }
 function renderCalendarTab(){
@@ -1386,7 +1386,7 @@ function renderCalendarTab(){
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일체크인</span><span class="cchip lg">청소</span><span class="cchip done lg">완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일</span><span class="cchip lg">청소</span><span class="cchip done lg">완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
@@ -1437,6 +1437,22 @@ async function moveProperty(id){
   if(cur.dayNotes) delete cur.dayNotes[id];
   if(cur.dayPass) delete cur.dayPass[id];
   state.todayRecord = cur;
+  await saveTodayRecord();
+  render();
+}
+async function removeJobFromToday(id){
+  const cur = state.todayRecord; const p = propById(id);
+  if(!cur || !p) return;
+  const tasks = (cur.tasks||{})[id]||[];
+  const warn = tasks.some(t=>t.done) ? '\n(체크한 기록도 같이 사라져)' : '';
+  if(!confirm(p.name+' 을(를) 이 날짜 일정에서 뺄까?'+warn)) return;
+  cur.propertyIds = (cur.propertyIds||[]).filter(x=>x!==id);
+  if(cur.tasks) delete cur.tasks[id];
+  cur.priorityIds = (cur.priorityIds||[]).filter(x=>x!==id);
+  if(cur.assign) delete cur.assign[id];
+  if(cur.dayNotes) delete cur.dayNotes[id];
+  if(cur.dayPass) delete cur.dayPass[id];
+  state.openJobIds.delete(id);
   await saveTodayRecord();
   render();
 }
@@ -1519,9 +1535,9 @@ function openImportSheet(){
       return true;
     }catch(err){ return false; }
   };
-  const findCancels = async (pid, pastedSet)=>{
+  const findCancels = async (pid, pastedSet, rangeMax)=>{
     const out = []; if(!pastedSet.size) return out;
-    const maxDs = [...pastedSet].sort().slice(-1)[0];
+    const maxDs = rangeMax || [...pastedSet].sort().slice(-1)[0];
     const [ty,tm,td] = todayStr().split('-').map(Number);
     for(let i=0; i<=150; i++){
       const dt = new Date(ty, tm-1, td+i); const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
@@ -1540,9 +1556,9 @@ function openImportSheet(){
   const labDs = (ds)=> `${Number(ds.slice(5,7))}/${Number(ds.slice(8))}`;
   const cancelHtml = (cancels, showName)=> cancels.length ? `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--paper-line);">
         <div style="font-size:13px;font-weight:700;color:var(--clay);">🗑 취소된 일정 후보 ${cancels.length}건</div>
-        <div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px;">붙여넣은 내용에는 없는데 앱에는 있는 날짜야 (오늘 이후만). 체크한 날짜는 그 숙소가 일정에서 빠져.</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px;">붙여넣은 내용에는 없는데 앱에는 있는 날짜야 (오늘 이후만). 직접 체크한 날짜만 그 숙소가 일정에서 빠져 (처음엔 전부 해제돼 있어).</div>
         ${cancels.map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;">
-          <input type="checkbox" data-kk-del="${i}" checked style="margin-top:3px;">
+          <input type="checkbox" data-kk-del="${i}" style="margin-top:3px;">
           <span><b>${labDs(c.ds)}</b>${showName?` · ${esc((propById(c.pid)||{}).name||'')}`:''}${c.worker?` · 배정 ${esc(c.worker)}`:''}${c.hasDone?' · <b style="color:var(--clay)">체크 기록 있음</b>':''}</span></label>`).join('')}</div>` : '';
   const runCancels = async (cancels)=>{
     let removed = 0, failed = 0;
@@ -1657,12 +1673,43 @@ function openImportSheet(){
     document.getElementById('imp_go').onclick = async ()=>{
       const map = {}; root.querySelectorAll('[data-imp-map]').forEach(sel=>{ map[names[Number(sel.dataset.impMap)]] = sel.value; });
       const btn = document.getElementById('imp_go'); btn.disabled = true; btn.textContent = '확인 중…';
+      await stepPreview(data, map);
+    };
+  };
+  const stepPreview = async (data, map)=>{
+    const dss = Object.keys(data).sort();
+    const exist = {};
+    for(const ds of dss){ try{ const x = await window.storage.get('today:'+ds, false); if(x && x.value){ exist[ds] = JSON.parse(x.value); } }catch(e){} }
+    let nAdd = 0, nHave = 0, nSkip = 0;
+    const rowsHtml = dss.map(ds=>{
+      const rec = exist[ds];
+      const items = data[ds].map(e=>{
+        const id = map[e.raw]; const p = id ? propById(id) : null;
+        if(!p){ nSkip++; return `<div style="margin:3px 0 3px 12px;color:var(--ink-soft);">· ${esc(e.raw)} <span style="font-size:11px;">(건너뜀)</span></div>`; }
+        const has = rec && (rec.propertyIds||[]).includes(id);
+        if(has) nHave++; else nAdd++;
+        return `<div style="margin:3px 0 3px 12px;">· ${esc(p.name)}${e.today?' <b style="color:var(--clay)">🔴 당일</b>':''} ${has?'<span style="font-size:11px;color:var(--ink-soft);">이미 있음</span>':'<b style="font-size:11px;color:var(--teal);">추가</b>'}</div>`;
+      }).join('');
+      const wd = '일월화수목금토'[new Date(ds+'T00:00:00').getDay()];
+      return `<div style="margin:8px 0;font-size:13px;"><b>${labDs(ds)}(${wd})</b>${items}</div>`;
+    }).join('');
+    root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
+      <h2>일정 미리보기</h2>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">새로 추가 <b>${nAdd}</b>건 · 이미 있음 ${nHave}건${nSkip?` · 건너뜀 ${nSkip}건`:''}<br>아직 아무것도 저장되지 않았어. 맞으면 "등록"을 눌러줘.</div>
+      ${rowsHtml}
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--paper-line);font-size:12px;color:var(--ink-soft);">이 목록이 <b>그 숙소의 전체 일정</b>일 때만, 목록에 없는 기존 일정을 찾아볼 수 있어.<br><button class="cancel-btn" id="pv_full" style="margin-top:6px;">전체 일정이야 · 빠진 일정 찾기</button></div>
+      <div class="sheet-actions"><button class="cancel-btn" id="pv_back">뒤로</button><button class="save-btn" id="pv_go" ${nAdd?'':'disabled'}>등록 (${nAdd})</button></div></div>`;
+    document.getElementById('pv_back').onclick = ()=> stepMap(data);
+    document.getElementById('pv_go').onclick = async ()=>{ const b = document.getElementById('pv_go'); b.disabled = true; b.textContent = '저장 중…'; await runImport(data, map, []); };
+    document.getElementById('pv_full').onclick = async ()=>{
+      const b = document.getElementById('pv_full'); b.disabled = true; b.textContent = '찾는 중…';
       const cset = {};
       Object.keys(data).forEach(ds=> data[ds].forEach(e=>{ const id = map[e.raw]; if(id){ (cset[id] = cset[id] || new Set()).add(ds); } }));
       let cancels = [];
-      for(const id of Object.keys(cset)) cancels = cancels.concat(await findCancels(id, cset[id]));
-      if(cancels.length){ stepListCancel(data, map, cancels); return; }
-      await runImport(data, map, []);
+      const rangeMax = Object.keys(data).sort().slice(-1)[0];
+      for(const id of Object.keys(cset)) cancels = cancels.concat(await findCancels(id, cset[id], rangeMax));
+      if(!cancels.length){ b.textContent = '빠진 일정 없음 ✓'; return; }
+      stepListCancel(data, map, cancels);
     };
   };
   const stepListCancel = (data, map, cancels)=>{
@@ -1671,7 +1718,7 @@ function openImportSheet(){
       <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">추가할 일정은 그대로 등록돼. 아래는 붙여넣은 내용에 없는데 앱에는 있는 앞으로의 일정이야.</div>
       ${cancelHtml(cancels, true)}
       <div class="sheet-actions"><button class="cancel-btn" id="lc_back">뒤로</button><button class="save-btn" id="lc_go">추가·삭제 반영</button></div></div>`;
-    document.getElementById('lc_back').onclick = ()=> stepMap(data);
+    document.getElementById('lc_back').onclick = ()=> stepPreview(data, map);
     document.getElementById('lc_go').onclick = async ()=>{ const b = document.getElementById('lc_go'); b.disabled = true; b.textContent = '저장 중…'; await runImport(data, map, cancels); };
   };
   const runImport = async (data, map, cancels)=>{
@@ -2384,7 +2431,7 @@ function renderPickerBody(mode){
         <div class="pname">${esc(p.name)}</div>
         <div class="paddr">${esc(p.address)}</div>
       </div>
-      <button class="priority-toggle ${state.pickerPriority.has(p.id)?'active':''}" data-priority="${p.id}">🔴 당일체크인</button>
+      <button class="priority-toggle ${state.pickerPriority.has(p.id)?'active':''}" data-priority="${p.id}">🔴 당일</button>
     </label>
   `).join('');
   const dateLabel = renderDateLabel();
@@ -2491,6 +2538,7 @@ function renderScheduleCards(){
             <div class="meta-addr">${esc(p.address)}</div>
             <div class="meta-sub"><span>OUT ${esc(p.out)} · IN ${esc(p.in)}${p.rooms ? ` · 룸/화장실 ${esc(p.rooms)}` : ''}${p.beds ? ` · ${esc(p.beds)}` : ''}</span></div>
           </div>
+          ${isAdmin() ? `<div style="margin:2px 0 8px;"><button class="priority-toggle" data-remove-job="${id}">🗑 이 날짜에서 빼기</button></div>` : ''}
           <!-- 날짜 이동 버튼: 지금은 안 써서 숨김 (필요하면 <button class="priority-toggle" data-move-date="${id}">📅 날짜 이동</button> 다시 추가) -->
           ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? `<div class="pw-row">
             <span class="pw-icon">🔓</span>
@@ -2858,7 +2906,7 @@ function openEditSheet(prop){
       </label>
       <label class="picker-row" style="margin-top:4px;">
         <input type="checkbox" id="f_alwaysPriority" ${e.alwaysPriority?'checked':''}>
-        <div style="flex:1;"><div class="pname">항상 당일체크인으로 표시</div><div class="paddr">오늘 리스트에 이 업체가 포함되면 자동으로 🔴 당일 표시가 켜져</div></div>
+        <div style="flex:1;"><div class="pname">항상 당일로 표시</div><div class="paddr">오늘 리스트에 이 업체가 포함되면 자동으로 🔴 당일 표시가 켜져</div></div>
       </label>
       <div class="sheet-actions">
         <button class="cancel-btn" id="cancelEdit">취소</button>
@@ -3095,6 +3143,7 @@ function attachHandlers(){
     el.onclick = ()=> togglePriority(el.dataset.togglePriority);
   });
   document.querySelectorAll('[data-move-date]').forEach(el=>{ el.onclick = ()=> moveProperty(el.dataset.moveDate); });
+  document.querySelectorAll('[data-remove-job]').forEach(el=>{ el.onclick = (ev)=>{ ev.stopPropagation(); removeJobFromToday(el.dataset.removeJob); }; });
   const confirmBtn = document.getElementById('confirmPick');
   if(confirmBtn) confirmBtn.onclick = createTodayList;
   const laundryReportBtn = document.getElementById('laundryReportBtn');
