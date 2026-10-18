@@ -192,7 +192,7 @@
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
-  .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:#F3D2C5;color:#5a2a1c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:var(--surface);box-shadow:inset 0 0 0 1px #D9D6CA;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cchip.pri{font-weight:700;color:#B3321A;}
   .cchip.pri.done{color:var(--teal);}
   .cchip.fx{display:flex;align-items:center;gap:3px;}
@@ -200,7 +200,7 @@
   .cchip.fx .wm{flex-shrink:0;}
   .cchip.lg{display:inline-flex;align-items:center;gap:3px;margin:0;padding:3px 8px;font-size:11px;}
   .cchip .pd{color:var(--clay);font-weight:800;}
-  .cchip.done{background:var(--teal-soft);color:var(--teal);}
+  .cchip.done{background:var(--teal-soft);color:var(--teal);box-shadow:none;}
   .past .cchip,.past .wk-chip,.past .dn,.past .n,.past .dots,.past .cc-cell .cn,.past .wd,.wk-day.past .cn,.cal-list-row.past .d,.cal-list-row.past .chips{opacity:.5;}
   .cal-cell.past .dn,.cc-cell.past .n,.wk-day.past .wd{opacity:.5;}
   .cchip .fn{display:none;}
@@ -211,8 +211,8 @@
   .wk-day .wd{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
   .wk-day .wd b{font-size:20px;}
   .wk-day .wd .cn{margin-left:auto;font-size:13px;color:var(--ink-soft);}
-  .wk-chip{display:flex;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--clay-soft,#f3d9d2);}
-  .wk-chip.done{background:var(--teal-soft,#dcebe7);}
+  .wk-chip{display:flex;align-items:center;gap:8px;font-size:16px;padding:9px 11px;margin:5px 0;border-radius:8px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--paper-line);}
+  .wk-chip.done{background:var(--teal-soft,#dcebe7);box-shadow:none;}
   .wk-chip.cp-row{background:var(--surface);border:1px solid var(--paper-line);}
   .wk-chip.cp-row.washed{background:#E6F3EC;border-color:#BFDCCB;}
   .wk-chip.cp-row .order-num{flex-shrink:0;}
@@ -234,8 +234,8 @@
   .cc-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;background:#F1F7F5;}
   .cc-cell .dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:100%;padding:0 2px;}
   .cc-cell .dots i{width:7px;height:7px;border-radius:50%;background:#bbb;display:block;}
-  .cc-cell .cn{margin-top:2px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#8a3a22;background:#F3D2C5;border-radius:50%;line-height:1;}
-  .cc-cell .cn.done{color:var(--teal);background:var(--teal-soft);}
+  .cc-cell .cn{margin-top:2px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--ink-soft);background:var(--surface);box-shadow:inset 0 0 0 1px #D2D0C4;border-radius:50%;line-height:1;}
+  .cc-cell .cn.done{color:var(--teal);background:var(--teal-soft);box-shadow:none;}
   .cc-cell .cn b{font-size:12px;}
   .cc-panel{margin-top:12px;}
   .cc-panel .ph{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
@@ -1428,7 +1428,7 @@ function renderCalendarTab(){
     </div>`;
   }
   return head + `<div class="mc-grid">${cells}</div>
-    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일</span><span class="cchip lg">청소</span><span class="cchip done lg">완료</span></div>`;
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px;color:var(--ink-soft);margin-top:8px;"><span class="cchip pri lg">당일</span><span class="cchip lg">미완료</span><span class="cchip done lg">완료</span></div>`;
 }
 function attachCalHandlers(){
   document.querySelectorAll('[data-cal-nav]').forEach(b=> b.onclick = ()=> moveCalMonth(Number(b.dataset.calNav)));
