@@ -191,6 +191,9 @@
   .cal-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;}
   .cal-cell .dn{font-size:11px;font-weight:700;padding:2px 4px;margin-bottom:3px;background:#E8E9E3;border-radius:5px;display:flex;justify-content:space-between;align-items:center;}
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
+  .cal-cell.dow-red .dn{background:#F8E4E1;} .cal-cell.dow-blue .dn{background:#E3ECF6;}
+  .cc-cell:not(.today) .n.red{background:#F8E4E1;} .cc-cell:not(.today) .n.blue{background:#E3ECF6;}
+  .cal-day.dow-red{background:#FBEDEB;} .cal-day.dow-blue{background:#EAF0F8;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
   .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:var(--surface);box-shadow:inset 0 0 0 1px #D9D6CA;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1440,7 +1443,7 @@ function renderCalendarTab(){
     const rec = inMonth ? state.monthRecords[ds] : null;
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
+    cells += `<div class="cal-cell ${cls?'dow-'+cls:''} ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
       ${chips.map(c=>`<span class="cchip fx ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><span class="nmw"><span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>${c.wash?'<span class="wm">🧺</span>':''}</span>`).join('')}
     </div>`;
@@ -2791,8 +2794,9 @@ function renderScheduleCalendar(){
     const hasRecord = state.historyDates && state.historyDates.has(key);
     const isTodayCell = key === todayStrVal;
     const isSelected = key === state.selectedDate;
+    const _wd = new Date(year, month, d).getDay(); const _dc = (_wd===0 || holidayName(key)) ? 'dow-red' : (_wd===6 ? 'dow-blue' : '');
     cells += `
-      <div class="cal-day ${hasRecord?'has-record':''} ${isTodayCell?'is-today':''} ${isSelected?'selected':''}" data-select-date="${key}">
+      <div class="cal-day ${_dc} ${hasRecord?'has-record':''} ${isTodayCell?'is-today':''} ${isSelected?'selected':''}" data-select-date="${key}">
         ${d}${hasRecord?'<div class="dot"></div>':''}
       </div>
     `;
