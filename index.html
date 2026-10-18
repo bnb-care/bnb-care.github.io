@@ -1075,6 +1075,7 @@ function attachDateBarHandlers(){
   });
 }
 function attachStaffHandlers(){
+  document.querySelectorAll('[data-clock-del]').forEach(el=>{ el.onclick = ()=> deleteWorkEntry(state.selectedDate || todayStr()); });
   document.querySelectorAll('[data-clock-action]').forEach(el=>{ el.onclick = async ()=>{
     const cd = state.selectedDate || todayStr();
     await upsertWorkEntry(cd, el.dataset.clockAction==='in' ? { clockIn: '10:00' } : { clockOut: '16:00' });
@@ -2280,6 +2281,13 @@ async function saveWorkLog(){
 function getWorkEntry(dateStr){
   return state.workLog.find(e=>e.date === dateStr);
 }
+async function deleteWorkEntry(dateStr){
+  const [,m,d] = dateStr.split('-').map(Number);
+  if(!confirm(m+'/'+d+' 출퇴근 기록을 삭제할까?')) return;
+  state.workLog = state.workLog.filter(e=>e.date !== dateStr);
+  await saveWorkLog();
+  render();
+}
 async function upsertWorkEntry(dateStr, patch){
   const idx = state.workLog.findIndex(e=>e.date === dateStr);
   if(idx === -1){
@@ -2479,6 +2487,7 @@ function renderClockCard(){
                 : `<span class="clock-dim">출근 후 가능</span>`)}
         </div>
       </div>
+      ${(entry.clockIn || entry.clockOut) ? `<div style="text-align:right;margin-top:6px;"><button data-clock-del="1" style="border:none;background:none;font-size:12px;color:var(--ink-soft);cursor:pointer;padding:4px 2px;">🗑 이 날 기록 삭제</button></div>` : ''}
       ${entry.clockIn && entry.clockOut ? `<div class="clock-duration">${state.selectedDate===todayStr()?'오늘':'이날'} 근무 시간: ${formatDuration(entry.clockIn, entry.clockOut)}</div>` : ''}
     </div>
   `;
@@ -3324,6 +3333,7 @@ function attachHandlers(){
     };
   });
 
+  document.querySelectorAll('[data-clock-del]').forEach(el=>{ el.onclick = ()=> deleteWorkEntry(state.selectedDate || todayStr()); });
   document.querySelectorAll('[data-clock-action]').forEach(el=>{
     el.onclick = async ()=>{
       const action = el.dataset.clockAction;
