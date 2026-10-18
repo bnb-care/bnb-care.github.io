@@ -189,10 +189,8 @@
   .cal-cell.out{background:#F7F8F4;}
   .cal-cell.out .dn{opacity:.4;}
   .cal-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;}
-  .cal-cell .dn{font-size:11px;font-weight:700;padding:0 2px 2px;display:flex;justify-content:space-between;align-items:center;}
+  .cal-cell .dn{font-size:11px;font-weight:700;padding:2px 4px;margin-bottom:3px;background:#E8E9E3;border-radius:5px;display:flex;justify-content:space-between;align-items:center;}
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
-  .cal-cell.alldone .dn,.wk-day.alldone .wd{background:#E8E9E3;border-radius:6px;}
-  .wk-day.alldone .wd{padding:4px 8px;margin:-4px -8px 0;}
   .schedule-cal-bar.alldone{background:#E8E9E3;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
@@ -1336,8 +1334,7 @@ function renderWeekView(){
     const chips = rec ? chipsFor(rec) : [];
     const wd = dt.getDay(); const hol = holidayName(ds);
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    const wcw = washCount(chips); const wkDone = (wcw && wcw.d===wcw.n) ? 'alldone' : '';
-    return `<div class="wk-day ${wkDone} ${ds===tStr?'today':''} ${ds<tStr?'past':''}" data-cal-day="${ds}">
+    return `<div class="wk-day ${ds===tStr?'today':''} ${ds<tStr?'past':''}" data-cal-day="${ds}">
       <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}<span class="cn">${chips.length?chips.length+'건'+washLabel(chips,' · '):''}</span></div>
       ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}" style="${barStyle(c.p)}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}${washBtn(ds,c)}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
     </div>`;
@@ -1427,8 +1424,7 @@ function renderCalendarTab(){
     const rec = inMonth ? state.monthRecords[ds] : null;
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    const wcg = washCount(chips); const allDoneCls = (wcg && wcg.d===wcg.n) ? 'alldone' : '';
-    cells += `<div class="cal-cell ${allDoneCls} ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
+    cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
       ${chips.map(c=>`<span class="cchip fx ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><span class="nmw"><span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>${c.wash?'<span class="wm">🧺</span>':''}</span>`).join('')}
     </div>`;
