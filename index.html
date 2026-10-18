@@ -71,7 +71,8 @@
   .summary .count span{color:var(--teal);}
   .count-row{display:flex;align-items:center;gap:6px 12px;margin-top:0;flex-wrap:wrap;}
   .count-item{font-family:var(--serif);font-size:17px;font-weight:700;color:var(--ink);}
-  .count-item span{color:var(--teal);}
+  .count-item span{color:#6b7068;}
+  .count-item.full span{color:var(--teal);}
   .summary-actions{display:flex;gap:6px;margin-left:auto;}
   .summary-actions button{position:relative;}
   .summary-actions .sdot{position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:var(--clay);border:2px solid #fff;}
@@ -190,6 +191,9 @@
   .cal-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;}
   .cal-cell .dn{font-size:11px;font-weight:700;padding:0 2px 2px;display:flex;justify-content:space-between;align-items:center;}
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
+  .cal-cell.alldone .dn,.wk-day.alldone .wd{background:#E8E9E3;border-radius:6px;}
+  .wk-day.alldone .wd{padding:4px 8px;margin:-4px -8px 0;}
+  .schedule-cal-bar.alldone{background:#E8E9E3;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
   .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:var(--surface);box-shadow:inset 0 0 0 1px #D9D6CA;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1332,7 +1336,8 @@ function renderWeekView(){
     const chips = rec ? chipsFor(rec) : [];
     const wd = dt.getDay(); const hol = holidayName(ds);
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    return `<div class="wk-day ${ds===tStr?'today':''} ${ds<tStr?'past':''}" data-cal-day="${ds}">
+    const wcw = washCount(chips); const wkDone = (wcw && wcw.d===wcw.n) ? 'alldone' : '';
+    return `<div class="wk-day ${wkDone} ${ds===tStr?'today':''} ${ds<tStr?'past':''}" data-cal-day="${ds}">
       <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}<span class="cn">${chips.length?chips.length+'건'+washLabel(chips,' · '):''}</span></div>
       ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}" style="${barStyle(c.p)}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}${washBtn(ds,c)}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
     </div>`;
@@ -1422,7 +1427,8 @@ function renderCalendarTab(){
     const rec = inMonth ? state.monthRecords[ds] : null;
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
-    cells += `<div class="cal-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
+    const wcg = washCount(chips); const allDoneCls = (wcg && wcg.d===wcg.n) ? 'alldone' : '';
+    cells += `<div class="cal-cell ${allDoneCls} ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
       ${chips.map(c=>`<span class="cchip fx ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><span class="nmw"><span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>${c.wash?'<span class="wm">🧺</span>':''}</span>`).join('')}
     </div>`;
@@ -2619,9 +2625,9 @@ function renderScheduleCards(){
     ${COMPANY_MODE ? '' : (state.selectedDate <= todayStr() ? renderClockCard() : renderClockReadOnly())}
     <div class="summary">
       <div class="count-row">
-        <div class="count-item">🧺 <span>${washDoneCount}</span>/${washTotal}</div>
-        <div class="count-item">🚚 <span>${laundryDoneCount}</span>/${laundryTotal}</div>
-        <div class="count-item">✅ <span>${conditionDoneCount}</span>/${conditionTotal}</div>
+        <div class="count-item ${washTotal>0 && washDoneCount===washTotal ? 'full' : ''}">🧺 <span>${washDoneCount}</span>/${washTotal}</div>
+        <div class="count-item ${laundryTotal>0 && laundryDoneCount===laundryTotal ? 'full' : ''}">🚚 <span>${laundryDoneCount}</span>/${laundryTotal}</div>
+        <div class="count-item ${conditionTotal>0 && conditionDoneCount===conditionTotal ? 'full' : ''}">✅ <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
           <button id="suggestOrderBtn" title="당일체크인 먼저 · 체크인 시간 순 정렬">🔢</button>
@@ -2747,8 +2753,11 @@ function renderScheduleCalendar(){
   const isTodaySelected = state.selectedDate === todayStr();
 
   if(!state.scheduleCalendarOpen){
+    const _r = state.todayRecord; let _w = [];
+    if(_r && _r.tasks) (_r.propertyIds||[]).forEach(id=>{ const t=(_r.tasks[id]||[]).find(x=>x.text==='세탁 완료'); if(t) _w.push(t); });
+    const barDone = _w.length>0 && _w.every(t=>t.done) ? 'alldone' : '';
     return `
-      <div class="schedule-cal-bar">
+      <div class="schedule-cal-bar ${barDone}">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
           <button class="dnav" data-day-nav="-1" aria-label="전날">◀</button>
           <div style="white-space:nowrap;">${isTodaySelected ? '오늘 · ' : ''}<b>${dateLabel}</b></div>
