@@ -191,7 +191,6 @@
   .cal-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;}
   .cal-cell .dn{font-size:11px;font-weight:700;padding:2px 4px;margin-bottom:3px;background:#E8E9E3;border-radius:5px;display:flex;justify-content:space-between;align-items:center;}
   .cal-cell .dn .hol{font-size:9px;font-weight:600;color:#c0392b;}
-  .schedule-cal-bar.alldone{background:#E8E9E3;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
   .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:var(--surface);box-shadow:inset 0 0 0 1px #D9D6CA;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -407,11 +406,11 @@
   .cal-day.selected .dot{background:#fff;}
   .cal-day.is-today{font-weight:700;}
   .schedule-cal-bar{
-    display:flex;align-items:center;justify-content:space-between;background:var(--surface);
+    display:flex;align-items:center;justify-content:space-between;background:#E8E9E3;
     border:1px solid var(--paper-line);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;font-size:14px;
   }
   .schedule-cal-bar button{
-    font-size:12px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--paper-line);
+    font-size:12px;color:var(--ink-soft);background:var(--surface);border:1px solid var(--paper-line);
     border-radius:20px;padding:6px 10px;cursor:pointer;font-family:var(--sans);
   }
 
@@ -2749,11 +2748,8 @@ function renderScheduleCalendar(){
   const isTodaySelected = state.selectedDate === todayStr();
 
   if(!state.scheduleCalendarOpen){
-    const _r = state.todayRecord; let _w = [];
-    if(_r && _r.tasks) (_r.propertyIds||[]).forEach(id=>{ const t=(_r.tasks[id]||[]).find(x=>x.text==='세탁 완료'); if(t) _w.push(t); });
-    const barDone = _w.length>0 && _w.every(t=>t.done) ? 'alldone' : '';
     return `
-      <div class="schedule-cal-bar ${barDone}">
+      <div class="schedule-cal-bar">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
           <button class="dnav" data-day-nav="-1" aria-label="전날">◀</button>
           <div style="white-space:nowrap;">${isTodaySelected ? '오늘 · ' : ''}<b>${dateLabel}</b></div>
