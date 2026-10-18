@@ -1029,17 +1029,22 @@ function renderStaffTab(){
   const mp = computeThisMonthPay();
   const attend = isAdmin() ? `
     <div class="prop-card open" style="margin-bottom:12px;"><div style="padding:12px;">
-      <div style="font-weight:700;font-size:15px;margin-bottom:6px;">🕒 내 근태</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div style="font-weight:700;font-size:15px;">🕒 내 근태</div>
+        <button class="pill-btn" id="workSettingsToggle" aria-label="근태 설정">${state.workSettingsOpen?'⚙️ 닫기 ▴':'⚙️ 설정 ▾'}</button>
+      </div>
+      ${state.workSettingsOpen ? `<div style="background:var(--paper);border:1px solid var(--paper-line);border-radius:10px;padding:10px;margin-bottom:8px;">
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          <button class="pill-btn" id="setHourlyWageBtn">💰 시급 ${state.hourlyWage ? state.hourlyWage.toLocaleString()+'원' : '설정'}</button>
+          <button class="pill-btn" id="workImportBtn">📥 기록 가져오기</button>
+          <button class="pill-btn" id="exportWorkLogBtn">📤 CSV 내보내기</button>
+          <input type="file" id="workImportFile" accept=".csv,.json,.txt" style="display:none;">
+        </div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">이 폰에만 저장돼.</div>
+      </div>` : ''}
       ${renderClockCard()}
       <button class="pill-btn" id="workListToggle" style="margin-top:10px;">${state.workListOpen?'📋 근태 기록 접기 ▴':'📋 근태 기록 보기 ▾'}</button>
       ${state.workListOpen ? renderWorkMonthList() : ''}
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-        <button class="pill-btn" id="workImportBtn">📥 기록 가져오기</button>
-        <button class="pill-btn" id="exportWorkLogBtn">📤 CSV 내보내기</button>
-        <button class="pill-btn" id="setHourlyWageBtn">💰 시급 ${state.hourlyWage ? state.hourlyWage.toLocaleString()+'원' : '설정'}</button>
-        <input type="file" id="workImportFile" accept=".csv,.json,.txt" style="display:none;">
-      </div>
-      <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">이 폰에만 저장돼. 위에서 고른 날짜 기준이야.</div>
     </div></div>` : '';
   return `
     ${renderScheduleCalendar()}
@@ -1078,6 +1083,7 @@ function attachStaffHandlers(){
     await upsertWorkEntry(state.selectedDate || todayStr(), { [el.dataset.clockEdit==='in'?'clockIn':'clockOut']: el.value });
     render(); }; });
   document.querySelectorAll('[data-step]').forEach(el=>{ el.onclick = ()=>{ const [f,d]=el.dataset.step.split(':'); stepClockTime(f, Number(d)); }; });
+  const wst=document.getElementById('workSettingsToggle'); if(wst) wst.onclick=()=>{ state.workSettingsOpen=!state.workSettingsOpen; render(); };
   const wlt=document.getElementById('workListToggle'); if(wlt) wlt.onclick=()=>{ state.workListOpen=!state.workListOpen; render(); };
   document.querySelectorAll('[data-work-month]').forEach(b=> b.onclick = ()=>{
     const base=new Date(); const [Y,M]=(state.workMonth||`${base.getFullYear()}-${pad2(base.getMonth()+1)}`).split('-').map(Number);
