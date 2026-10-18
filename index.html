@@ -234,7 +234,8 @@
   .cc-cell.sel{outline:2px solid var(--teal);outline-offset:-2px;background:#F1F7F5;}
   .cc-cell .dots{display:flex;flex-wrap:wrap;gap:2px;justify-content:center;max-width:100%;padding:0 2px;}
   .cc-cell .dots i{width:7px;height:7px;border-radius:50%;background:#bbb;display:block;}
-  .cc-cell .cn{margin-top:2px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--teal);background:var(--teal-soft);border-radius:50%;line-height:1;}
+  .cc-cell .cn{margin-top:2px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--ink-soft);background:#E8E9E3;border-radius:50%;line-height:1;}
+  .cc-cell .cn.done{color:var(--teal);background:var(--teal-soft);}
   .cc-cell .cn b{font-size:12px;}
   .cc-panel{margin-top:12px;}
   .cc-panel .ph{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
@@ -1361,7 +1362,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     const dots = chips.slice(0,6).map(c=>`<i></i>`).join('');
     cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
-      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn">${chips.length}</span>`:''}</div>`;
+      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn ${(()=>{const w=washCount(chips);return w&&w.d===w.n?'done':'';})()}">${chips.length}</span>`:''}</div>`;
   }
   const rec = state.monthRecords[pick];
   const chips = rec ? chipsFor(rec) : [];
