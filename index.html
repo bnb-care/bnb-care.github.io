@@ -1036,11 +1036,10 @@ function renderStaffTab(){
         <button class="pill-btn" id="setHourlyWageBtn">💰 시급 ${state.hourlyWage ? state.hourlyWage.toLocaleString()+'원' : '설정'}</button>
         <input type="file" id="workImportFile" accept=".csv,.json,.txt" style="display:none;">
       </div>
-      <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">이 폰에만 저장돼. 날짜는 일정·오늘 탭에서 고른 날짜 기준이야.</div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">이 폰에만 저장돼. 위에서 고른 날짜 기준이야.</div>
     </div></div>` : '';
   return `
-    <div class="summary"><div class="date">${renderDateLabel()}</div>
-      <div style="font-size:12px;color:var(--ink-soft);">날짜는 ${COMPANY_MODE?'일정·오늘':'일정'} 탭에서 바꿔 · 가능 ${avail.length}명 / 불가 ${unavail.length}명</div></div>
+    ${renderScheduleCalendar()}
     ${attend}
     ${state.staff.length ? avail.map(card).join('') + (unavail.length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.map(card).join(''):'') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
     <div style="display:flex;gap:8px;margin-top:12px;">
@@ -1048,6 +1047,24 @@ function renderStaffTab(){
       <button class="pill-btn" id="staffAddBtn">+ 직원 추가</button>
       <button class="pill-btn" id="staffImportBtn">JSON 붙여넣기</button>
     </div>`;
+}
+function attachDateBarHandlers(){
+  document.querySelectorAll('[data-day-nav]').forEach(b=> b.onclick = ()=>{
+    const [y,m,d] = state.selectedDate.split('-').map(Number);
+    const dt = new Date(y, m-1, d + Number(b.dataset.dayNav));
+    selectScheduleDate(ymd(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+  });
+  const tg = document.getElementById('toggleScheduleCal');
+  if(tg) tg.onclick = ()=>{ state.scheduleCalendarOpen = !state.scheduleCalendarOpen; render(); };
+  document.querySelectorAll('[data-select-date]').forEach(el=>{ el.onclick = ()=> selectScheduleDate(el.dataset.selectDate); });
+  document.querySelectorAll('[data-month-nav]').forEach(el=>{
+    el.onclick = ()=>{
+      let { year, month } = state.historyMonth; month += Number(el.dataset.monthNav);
+      if(month < 0){ month = 11; year -= 1; }
+      if(month > 11){ month = 0; year += 1; }
+      state.historyMonth = { year, month }; render();
+    };
+  });
 }
 function attachStaffHandlers(){
   document.querySelectorAll('[data-clock-action]').forEach(el=>{ el.onclick = async ()=>{
@@ -2400,6 +2417,8 @@ function render(){
     fab.style.display='none';
     view.innerHTML = renderStaffTab();
     attachStaffHandlers();
+    attachDateBarHandlers();
+    setupHistoryIfNeeded();
   } else if(state.tab === 'map'){
     fab.style.display='none';
     view.innerHTML = renderMapTab();
