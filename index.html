@@ -723,6 +723,7 @@ function warningsFor(st, p){
 async function setAssign(propId, staffId){
   const r = state.todayRecord;
   r.assign = r.assign || {};
+  if((r.assign[propId]||'') !== (staffId||'') && r.workOrder) delete r.workOrder[propId];
   if(staffId) r.assign[propId] = staffId; else delete r.assign[propId];
   await saveTodayRecord();
   render();
@@ -819,7 +820,19 @@ function openStaffEditSheet(st){
 function staffAssignedProps(stId){
   const r = state.todayRecord;
   if(!r) return [];
-  return r.propertyIds.filter(id => (r.assign||{})[id] === stId);
+  const wo = r.workOrder || {};
+  const l = r.propertyIds.filter(id => (r.assign||{})[id] === stId);
+  // 작업자 순서: 직접 정한 번호(workOrder)가 있으면 그 순서, 없으면 카드 순서
+  return l.map((id,i)=>({id,i,o:wo[id]||9999})).sort((a,b)=>(a.o-b.o)||(a.i-b.i)).map(x=>x.id);
+}
+async function setWorkOrder(propId, n){
+  const r = state.todayRecord; r.workOrder = r.workOrder || {};
+  const stId = (r.assign||{})[propId]; if(!stId) return;
+  const l = staffAssignedProps(stId).filter(id=>id!==propId);
+  if(n>0) l.splice(Math.min(n-1,l.length),0,propId); else l.push(propId);
+  if(n>0) l.forEach((id,k)=>{ r.workOrder[id]=k+1; });
+  else { staffAssignedProps(stId).forEach((id,k)=>{ r.workOrder[id]=k+1; }); delete r.workOrder[propId]; }
+  await saveTodayRecord(); render();
 }
 // 전달 표시 (이 폰에만 저장)
 const sentKey = ()=> 'sent:'+state.selectedDate;
@@ -935,12 +948,9 @@ function openAssignPastePreview(groups){
       });
       if(seq.length) orderByStaff.push(seq);
     });
-    // 작업 순서: 문서에 적힌 순서대로 (카드 전체 순서에서 각 작업자 몫의 자리는 유지하며 그 안에서 재배열)
-    const ids = r.propertyIds;
-    orderByStaff.forEach(seq=>{
-      const slots = ids.map((id,i)=>seq.includes(id)?i:-1).filter(i=>i>=0);
-      slots.forEach((slot,k)=>{ ids[slot] = seq[k]; });
-    });
+    // 작업 순서: 문서에 적힌 순서를 작업자 순서로 저장 (카드 순서는 안 바꿔)
+    r.workOrder = r.workOrder || {};
+    orderByStaff.forEach(seq=>{ seq.forEach((id,k)=>{ r.workOrder[id] = k+1; }); });
     await saveTodayRecord(); root.remove(); render();
     alert(n+'곳 반영했어.');
   };
@@ -2744,6 +2754,7 @@ function renderScheduleCards(){
           <div class="assign-row">
             <span class="pw-icon">👤</span>
             <select data-assign="${id}" ${isAdmin()?'':'disabled'}>${assignOpts}</select>
+            ${(assignedSt && isAdmin()) ? (()=>{ const l=staffAssignedProps(assignedSt.id); const k=l.indexOf(id); return `<select data-work-order="${id}" style="flex:0 0 auto;width:auto;margin-left:6px;" title="${esc(assignedSt.name)}님 작업 순서">${l.map((_,j)=>`<option value="${j+1}" ${j===k?'selected':''}>${j+1}번째</option>`).join('')}</select>`; })() : ''}
           </div>
           <div class="notes-row">
             <span class="pw-icon">📝</span>
@@ -3506,6 +3517,10 @@ function attachHandlers(){
   if(openAssignBtn) openAssignBtn.onclick = openAssignSheet;
   document.querySelectorAll('[data-assign]').forEach(el=>{
     el.onchange = ()=> setAssign(el.dataset.assign, el.value);
+  });
+  document.querySelectorAll('[data-work-order]').forEach(el=>{
+    el.onclick = (e)=> e.stopPropagation();
+    el.onchange = ()=> setWorkOrder(el.dataset.workOrder, +el.value);
   });
   fillPassSuggestions();
   document.querySelectorAll('[data-day-pass]').forEach(el=>{
