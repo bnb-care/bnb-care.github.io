@@ -2550,7 +2550,14 @@ function renderToday(){
   return renderScheduleCalendar() + renderScheduleCards();
 }
 
+// 당일 체크인(🔴)은 항상 맨 위로 (그 안에서는 저장된 순서 유지)
+function priorityFirst(rec){
+  const a = rec.propertyIds || []; const pri = new Set(rec.priorityIds || []);
+  const first = a.filter(id=>pri.has(id)), rest = a.filter(id=>!pri.has(id));
+  a.splice(0, a.length, ...first, ...rest);
+}
 function renderScheduleCards(){
+  priorityFirst(state.todayRecord);
   const ids = state.todayRecord.propertyIds;
   const taskMap = state.todayRecord.tasks;
   const doneCount = ids.filter(id => taskMap[id].every(t=>t.done)).length;
