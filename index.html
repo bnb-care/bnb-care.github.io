@@ -2783,7 +2783,7 @@ function renderScheduleCards(){
         <div class="count-item ${conditionTotal>0 && conditionDoneCount===conditionTotal ? 'full' : ''}">✅ <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
-          <button id="suggestOrderBtn" title="청소 끝나는 예상 순서로 정렬 (작업자 순서 반영)">🔢</button>
+          <button id="suggestOrderBtn" title="당일체크인 먼저 · 청소 끝나는 예상 순서로 정렬 (작업자 순서 반영)">🔢</button>
           <button id="openEditToday" title="숙소 추가제외">➕</button>
           ${state.staff.length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
           <!-- 초기화(🔄) 버튼: 지금은 안 써서 숨김 (필요하면 <button id="relist" title="초기화">🔄</button> 다시 추가) -->` : ''}
@@ -3865,10 +3865,10 @@ async function suggestOrder(){
     });
   });
   main.forEach(id=>{ if(eta[id]==null) eta[id] = START_MIN + cleanMinutes(propById(id)); }); // 배정 없는 곳은 첫 작업으로 계산
-  // 먼저 끝나는 곳부터 확인 → 한 작업자의 2번째 청소는 자연스럽게 다른 사람들의 1번째 뒤로 감
-  main.sort((a,b)=> (eta[a]-eta[b]) || ((pri.has(b)?1:0)-(pri.has(a)?1:0)) || (inOf(a)-inOf(b)));
+  // 당일 체크인(🔴)은 마감이 급하니 먼저, 그 안에서 / 나머지(늦게까지 해도 되는 곳)는 먼저 끝나는 순서로 확인
+  main.sort((a,b)=> ((pri.has(b)?1:0)-(pri.has(a)?1:0)) || (eta[a]-eta[b]) || (inOf(a)-inOf(b)));
   const lines = main.map((id,i)=>{ const p=propById(id), st=staffById((r.assign||{})[id]); return `${i+1}. ${p.name}${st?' ('+st.name+')':''} · 예상 ${fmtMin(eta[id])}`; }).join('\n');
-  if(!confirm('청소가 먼저 끝날 걸로 예상되는 순서로 정렬할까?\n(작업자별 순서대로 11:00 시작 · 청소시간 + 이동 30분 누적)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
+  if(!confirm('당일 체크인 먼저, 그다음 청소가 먼저 끝날 걸로 예상되는 순서로 정렬할까?\n(작업자별 순서대로 11:00 시작 · 청소시간 + 이동 30분 누적)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
   // 정렬해도 작업자별 순서(1·2번째)는 지금 그대로 고정
   r.workOrder = r.workOrder || {};
   (state.staff||[]).forEach(st=> staffAssignedProps(st.id).forEach((id,k)=>{ r.workOrder[id] = k+1; }));
