@@ -843,6 +843,107 @@ function sentBadge(stId){
   if(x.s==='changed') return `<span style="font-size:12px;color:var(--clay);font-weight:700;">⚠️ 수정됨 · 다시 보내기</span>`;
   return '';
 }
+
+// ===== 배정 문서 붙여넣기: "조아라님 / 1.숙소 / 비번*" 형식을 읽어 작업자·순서·비번에 반영 =====
+function parseAssignDoc(text){
+  const groups = []; let cur = null;
+  const staffByName = n=>{ n=String(n).replace(/님$/,'').trim(); return state.staff.find(st=>st.name===n) || state.staff.find(st=>st.name.includes(n) || n.includes(st.name)) || null; };
+  String(text||'').split(/\r?\n/).forEach(raw=>{
+    const line = raw.trim(); if(!line) return;
+    const head = line.match(/^([가-힣]{2,4})\s*님\s*$/);
+    if(head){ cur = { name: head[1], staff: staffByName(head[1]), items: [] }; groups.push(cur); return; }
+    const m = line.match(/^(\d{1,2})\s*[.)]\s*(.+)$/);
+    const body = m ? m[2] : (cur && !m && /\//.test(line) ? line : null);   // 번호 없는 한 줄짜리(예: 홍대102호 / 주소 / 비번)
+    if(!body){ return; }
+    if(!cur){ cur = { name: '', staff: null, items: [] }; groups.push(cur); }
+    const parts = body.split('/').map(x=>x.trim());
+    const nameRaw = parts[0]; const rest = parts.slice(1);
+    // 비번: 뒤쪽 토막 중 숫자/*/영문 위주 또는 "비번:" 표기. 나머지는 메모
+    let pass = '', notes = [];
+    rest.forEach(t=>{
+      if(!t) return;
+      const pm = t.match(/^비번\s*[:：]?\s*(.+)$/);
+      if(pm){ pass = pm[1].trim(); return; }
+      if(!pass && /^[0-9A-Za-z*#,\s옥]+$/.test(t.replace(/\(.*?\)/g,'').replace(/수건\s*\d+\s*장/g,'').trim()) && /\d/.test(t)){ 
+        const noteBits = []; let p = t.replace(/\((.*?)\)/g,(_,x)=>{ noteBits.push(x); return ''; }).replace(/(수건\s*\d+\s*장)/g,(_,x)=>{ noteBits.push(x); return ''; }).trim();
+        pass = p; notes = notes.concat(noteBits); return; }
+      if(/[가-힣]+(로|길)\s*\d/.test(t) || /^[가-힣]+구\s/.test(t)) return;   // 주소 토막은 무시
+      notes.push(t);
+    });
+    // 비번 토막에 "수건16장" 처럼 붙은 꼬리 메모 분리
+    const tail = pass.match(/^(.*?\*)\s+([가-힣].*)$/); if(tail && !/^옥/.test(tail[2])){ pass = tail[1].trim(); notes.push(tail[2].trim()); }
+    // 숙소 찾기: 주소식 표기(예: 동교로 25길 9, 102호)는 정리해서, 그래도 안 되면 '동' 뺀 표기로 한 번 더
+    let prop = null;
+    const cleaned = nameRaw.replace(/\d+\s*길\s*\d+\s*,?/g,'').trim();
+    if(cleaned !== nameRaw) prop = findBestPropertyMatch(cleaned);
+    if(!prop) prop = findBestPropertyMatch(nameRaw);
+    if(!prop){
+      const k = normalizeForMatch(nameRaw).replace(/동/g,'');
+      const hits = state.properties.filter(p=>normalizeForMatch(p.name).replace(/동/g,'').includes(k));
+      if(hits.length===1) prop = hits[0];
+    }
+    cur.items.push({ nameRaw, prop, pass, notes: notes.filter(Boolean) });
+  });
+  return groups;
+}
+function openAssignPasteSheet(){
+  const root = document.createElement('div'); root.className='overlay'; root.id='overlay';
+  root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>📥 배정 문서 붙여넣기</h2>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">예) 조아라님 ↵ 1.창천동 잇다 302호 / 3198* ↵ 2.창천동 잇다 303호 / 익일<br>작업자 이름·순서·오늘 비번을 읽어서 <b>${esc(renderDateLabel())}</b> 일정에 넣어줘. 아직 저장은 안 하고 미리보기부터 보여줘.</div>
+    <textarea id="ap_text" style="width:100%;height:240px;font-size:13px;"></textarea>
+    <div class="sheet-actions"><button class="cancel-btn" id="ap_cancel">닫기</button><button class="save-btn" id="ap_next">미리보기</button></div></div>`;
+  document.body.appendChild(root);
+  root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
+  document.getElementById('ap_cancel').onclick = ()=> root.remove();
+  document.getElementById('ap_next').onclick = ()=>{
+    const groups = parseAssignDoc(document.getElementById('ap_text').value);
+    if(!groups.some(g=>g.items.length)){ alert('작업자/숙소 줄을 못 찾았어. "조아라님" 다음 줄에 "1.숙소 / 비번" 형식으로 붙여넣어줘.'); return; }
+    root.remove(); openAssignPastePreview(groups);
+  };
+}
+function openAssignPastePreview(groups){
+  const r = state.todayRecord;
+  const inDay = id=> r && (r.propertyIds||[]).includes(id);
+  const rows = groups.map((g,gi)=>{
+    const head = `<div style="font-weight:700;margin-top:10px;">${esc(g.name||'(작업자 이름 없음)')}${g.staff?'':' <span style="color:var(--clay);font-size:12px;">⚠️ 직원 목록에 없어</span>'}</div>`;
+    const items = g.items.map((it,i)=>{
+      const ok = it.prop && inDay(it.prop.id);
+      const st = !it.prop ? '<span style="color:var(--clay);">숙소를 못 찾았어</span>' : (!inDay(it.prop.id) ? '<span style="color:var(--clay);">이 날 일정에 없어 (건너뜀)</span>' : '<span style="color:var(--teal);">✓</span>');
+      return `<div style="font-size:13px;padding:3px 0 3px 8px;">${i+1}. ${esc(it.nameRaw)}${it.prop?` → <b>${esc(it.prop.name)}</b>`:''} ${st}${it.pass?`<div style="color:var(--ink-soft);padding-left:14px;">비번 ${esc(it.pass)}</div>`:''}${it.notes.length?`<div style="color:var(--ink-soft);padding-left:14px;">메모 ${esc(it.notes.join(', '))}</div>`:''}</div>`;
+    }).join('');
+    return head+items;
+  }).join('');
+  const root = document.createElement('div'); root.className='overlay'; root.id='overlay';
+  root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>미리보기</h2>
+    <div style="font-size:12px;color:var(--ink-soft);">아직 아무것도 저장되지 않았어. 맞으면 "적용"을 눌러줘.<br>적용하면 작업자 배정·작업 순서·오늘 비번·메모가 들어가.</div>${rows}
+    <div class="sheet-actions"><button class="cancel-btn" id="apv_back">뒤로</button><button class="save-btn" id="apv_go">적용</button></div></div>`;
+  document.body.appendChild(root);
+  document.getElementById('apv_back').onclick = ()=>{ root.remove(); openAssignPasteSheet(); };
+  document.getElementById('apv_go').onclick = async ()=>{
+    r.assign = r.assign || {}; r.dayPass = r.dayPass || {}; r.dayNotes = r.dayNotes || {};
+    let n = 0; const orderByStaff = [];
+    groups.forEach(g=>{
+      const seq = [];
+      g.items.forEach(it=>{
+        if(!it.prop || !inDay(it.prop.id)) return;
+        const id = it.prop.id; seq.push(id);
+        if(g.staff) r.assign[id] = g.staff.id;
+        if(it.pass) r.dayPass[id] = it.pass;
+        if(it.notes.length){ const old = (r.dayNotes[id]||'').trim(); const add = it.notes.join(', '); if(!old.includes(add)) r.dayNotes[id] = old ? old+' · '+add : add; }
+        n++;
+      });
+      if(seq.length) orderByStaff.push(seq);
+    });
+    // 작업 순서: 문서에 적힌 순서대로 (카드 전체 순서에서 각 작업자 몫의 자리는 유지하며 그 안에서 재배열)
+    const ids = r.propertyIds;
+    orderByStaff.forEach(seq=>{
+      const slots = ids.map((id,i)=>seq.includes(id)?i:-1).filter(i=>i>=0);
+      slots.forEach((slot,k)=>{ ids[slot] = seq[k]; });
+    });
+    await saveTodayRecord(); root.remove(); render();
+    alert(n+'곳 반영했어.');
+  };
+}
 function openSendSheet(){
   const rows = state.staff.map(st=>{
     const n = staffAssignedProps(st.id).length;
@@ -857,9 +958,11 @@ function openSendSheet(){
   root.className='overlay'; root.id='overlay';
   root.innerHTML = `<div class="sheet"><h2>✉️ 직원 보내기</h2>
     <div style="margin-bottom:8px;">${rows || '<div style="font-size:13px;color:var(--ink-soft);">보낼 일정이 없어.</div>'}</div>
+    <button class="pill-btn" id="openAssignPaste" style="width:100%;margin-bottom:8px;">📥 배정 문서 붙여넣기 (작업자·순서·비번)</button>
     <div class="sheet-actions"><button class="cancel-btn" id="closeSend">닫기</button></div></div>`;
   document.body.appendChild(root);
   document.getElementById('closeSend').onclick = ()=> root.remove();
+  document.getElementById('openAssignPaste').onclick = ()=>{ root.remove(); openAssignPasteSheet(); };
   root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
   root.querySelectorAll('[data-send-to]').forEach(b=> b.onclick = ()=>{ const id=b.dataset.sendTo; root.remove(); openPersonalSheet(id); });
 }
@@ -2612,7 +2715,7 @@ function renderScheduleCards(){
           <div class="job-title-block">
             <div style="display:flex;align-items:center;gap:6px;min-width:0;height:24px;">
               <div class="job-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;"><span class="jn-num ${isPriority?'pri':''}" style="${ids.length>=10?'width:28px;':''}" ${isPriority?'title="당일체크인"':''}>${cardIdx+1}</span>${nameHtml(p.name)}</div>
-              ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}</span>` : ''}
+              ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}${(()=>{ const l=staffAssignedProps(assignedSt.id); const k=l.indexOf(id); return (l.length>1 && k>=0) ? ' '+(['①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'][k]||(k+1)) : ''; })()}</span>` : ''}
             </div>
             <div style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}${conditionTask ? `<button class="qb ${conditionDone?'on':''}" data-stop-toggle="1" ${conditionDone?`data-report="${id}"`:''} title="${conditionDone ? '완료 보고하기'+(lastReportFor(id)?' (최근 보고 '+formatSendTime(lastReportFor(id).ts)+')':'') : '컨디션 체크를 마치면 보고할 수 있어'}">📨</button>` : ''}</span></div>
           </div>
