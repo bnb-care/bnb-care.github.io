@@ -2783,7 +2783,7 @@ function renderScheduleCards(){
         <div class="count-item ${conditionTotal>0 && conditionDoneCount===conditionTotal ? 'full' : ''}">✅ <span>${conditionDoneCount}</span>/${conditionTotal}</div>
         <div class="summary-actions">
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
-          <button id="suggestOrderBtn" title="당일체크인 먼저 · 체크인 시간 순 정렬">🔢</button>
+          <button id="suggestOrderBtn" title="청소 끝나는 예상 순서로 정렬 (작업자 순서 반영)">🔢</button>
           <button id="openEditToday" title="숙소 추가제외">➕</button>
           ${state.staff.length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
           <!-- 초기화(🔄) 버튼: 지금은 안 써서 숨김 (필요하면 <button id="relist" title="초기화">🔄</button> 다시 추가) -->` : ''}
@@ -2866,7 +2866,7 @@ function renderAll(){
 }
 
 function mapBackBtn(){
-  return COMPANY_MODE ? '<button class="relist-btn" id="mapBack" style="margin-bottom:10px;">← 일정으로 돌아가기</button>' : '';
+  return COMPANY_MODE ? '<button class="relist-btn" id="mapBack" title="일정으로 돌아가기" aria-label="일정으로 돌아가기" style="margin-bottom:10px;font-size:18px;padding:5px 14px;line-height:1.2;">📅</button>' : '';
 }
 function renderMapTab(){
   if(!state.kakaoKey){
@@ -3852,12 +3852,26 @@ async function suggestOrder(){
   const r = state.todayRecord; const ids = r.propertyIds;
   const main = ids.filter(id=>{ const p=propById(id); return p && !isPickupOnly(p); });
   const rest = ids.filter(id=>!main.includes(id));
-  const inOf = id=>{ const t=parseClockMin(propById(id).in); return t==null?9999:t; };
-  const pri = new Set(r.priorityIds||[]);
-  main.sort((a,b)=> ((pri.has(b)?1:0)-(pri.has(a)?1:0)) || (inOf(a)-inOf(b)) || (cleanMinutes(propById(b))-cleanMinutes(propById(a))));
   if(!main.length){ alert('순서를 정할 숙소가 없어.'); return; }
-  const lines = main.map((id,i)=>{ const p=propById(id), t=parseClockMin(p.in); return `${i+1}. ${p.name}`; }).join('\n');
-  if(!confirm('당일체크인 먼저, 그다음 체크인 시간이 빠른 순서로 정렬할까?\n(같으면 청소시간이 긴 곳 먼저)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
+  const pri = new Set(r.priorityIds||[]);
+  const inOf = id=>{ const t=parseClockMin(propById(id).in); return t==null?9999:t; };
+  // 예상 청소 끝나는 시각: 작업자별로 11:00 시작 → 청소시간 누적 + 곳 사이 이동 30분 (작업자 순서 기준)
+  const eta = {};
+  (state.staff||[]).forEach(st=>{
+    let t = START_MIN, first = true;
+    staffAssignedProps(st.id).forEach(id=>{
+      const p = propById(id); if(!p || isPickupOnly(p)) return;
+      t += (first?0:TRAVEL_MIN) + cleanMinutes(p); first = false; eta[id] = t;
+    });
+  });
+  main.forEach(id=>{ if(eta[id]==null) eta[id] = START_MIN + cleanMinutes(propById(id)); }); // 배정 없는 곳은 첫 작업으로 계산
+  // 먼저 끝나는 곳부터 확인 → 한 작업자의 2번째 청소는 자연스럽게 다른 사람들의 1번째 뒤로 감
+  main.sort((a,b)=> (eta[a]-eta[b]) || ((pri.has(b)?1:0)-(pri.has(a)?1:0)) || (inOf(a)-inOf(b)));
+  const lines = main.map((id,i)=>{ const p=propById(id), st=staffById((r.assign||{})[id]); return `${i+1}. ${p.name}${st?' ('+st.name+')':''} · 예상 ${fmtMin(eta[id])}`; }).join('\n');
+  if(!confirm('청소가 먼저 끝날 걸로 예상되는 순서로 정렬할까?\n(작업자별 순서대로 11:00 시작 · 청소시간 + 이동 30분 누적)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
+  // 정렬해도 작업자별 순서(1·2번째)는 지금 그대로 고정
+  r.workOrder = r.workOrder || {};
+  (state.staff||[]).forEach(st=> staffAssignedProps(st.id).forEach((id,k)=>{ r.workOrder[id] = k+1; }));
   r.propertyIds = main.concat(rest);
   await saveTodayRecord(); render();
 }
