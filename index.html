@@ -255,7 +255,7 @@
   .assign-row select{flex:1;padding:8px;border-radius:8px;border:1px solid var(--paper-line);font-size:14px;font-family:var(--sans);background:#fff;}
   .warn-line{font-size:12px;color:var(--clay);margin-top:4px;line-height:1.4;}
   .worker-badge{flex-shrink:0;font-size:10px;font-weight:700;background:#eee;color:#444;border-radius:6px;padding:1px 6px;display:inline-flex;align-items:center;gap:4px;}
-  .worker-badge .wk-no{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;border-radius:9px;background:#2f3a35;color:#fff;font-size:12px;font-weight:800;line-height:1;margin-right:-3px;}
+  .worker-badge .wk-no{display:inline-flex;align-items:center;justify-content:center;min-width:15px;height:15px;border-radius:8px;background:#fff;border:1.5px solid #8a928b;color:#3d4640;font-size:10px;font-weight:800;line-height:1;margin-right:-3px;box-sizing:border-box;}
   .day-note{width:100%;box-sizing:border-box;border:1px solid var(--paper-line);border-radius:8px;padding:8px;font-size:13px;font-family:var(--sans);resize:vertical;min-height:36px;}
   .staff-item{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--paper-line);font-size:13px;}
   .staff-item .sname{font-weight:700;font-size:14px;}
@@ -2671,7 +2671,6 @@ function priorityFirst(rec){
   a.splice(0, a.length, ...first, ...rest);
 }
 function renderScheduleCards(){
-  priorityFirst(state.todayRecord);
   const ids = state.todayRecord.propertyIds;
   const taskMap = state.todayRecord.tasks;
   const doneCount = ids.filter(id => taskMap[id].every(t=>t.done)).length;
@@ -3709,7 +3708,12 @@ async function togglePriority(id){
   if(!state.todayRecord.priorityIds) state.todayRecord.priorityIds = [];
   const priorityIds = state.todayRecord.priorityIds;
   const idx = priorityIds.indexOf(id);
-  if(idx === -1) priorityIds.push(id);
+  if(idx === -1){
+    priorityIds.push(id);
+    // 당일로 지정하면 한 번만 맨 위로 올려줘 (그 뒤엔 마음대로 옮길 수 있어)
+    const ids = state.todayRecord.propertyIds, k = ids.indexOf(id);
+    if(k > 0){ ids.splice(k,1); ids.unshift(id); }
+  }
   else priorityIds.splice(idx, 1);
   await saveTodayRecord();
   render();
@@ -3734,9 +3738,7 @@ function setupCardDrag(){
       const priSet = new Set((state.todayRecord.priorityIds)||[]);
       const isPri = c=> priSet.has((c.querySelector('.drag-handle')||{dataset:{}}).dataset.drag);
       const myPri = isPri(card);
-      let lo = from, hi = from;
-      while(lo>0 && isPri(cards[lo-1])===myPri) lo--;
-      while(hi<cards.length-1 && isPri(cards[hi+1])===myPri) hi++;
+      const lo = 0, hi = cards.length-1; // 어디든 자유롭게 이동
       cards.forEach((c,i)=>{ if(i!==from) c.classList.add('shifting'); });
       card.classList.add('dragging');
       let dy = 0, target = from, lastY = ev.clientY, raf = null;
