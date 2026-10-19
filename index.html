@@ -3714,13 +3714,22 @@ function setupCardDrag(){
       const sy0 = window.scrollY, y0 = ev.clientY;
       const rects = cards.map(c=>{ const r=c.getBoundingClientRect(); return { top:r.top+sy0, h:r.height }; });
       const myH = rects[from].h + 12;
+      // 당일 체크인(🔴)은 항상 맨 위 고정 → 같은 묶음(당일끼리 / 나머지끼리) 안에서만 움직이게 제한
+      const priSet = new Set((state.todayRecord.priorityIds)||[]);
+      const isPri = c=> priSet.has((c.querySelector('.drag-handle')||{dataset:{}}).dataset.drag);
+      const myPri = isPri(card);
+      let lo = from, hi = from;
+      while(lo>0 && isPri(cards[lo-1])===myPri) lo--;
+      while(hi<cards.length-1 && isPri(cards[hi+1])===myPri) hi++;
       cards.forEach((c,i)=>{ if(i!==from) c.classList.add('shifting'); });
       card.classList.add('dragging');
       let dy = 0, target = from, lastY = ev.clientY, raf = null;
       const update = ()=>{
         dy = (lastY + window.scrollY) - (y0 + sy0);
+        const rawDy = dy;
+        dy = Math.max(rects[lo].top - rects[from].top, Math.min(dy, rects[hi].top + rects[hi].h - rects[from].top - rects[from].h));
         card.style.transform = `translateY(${dy}px)`;
-        const center = rects[from].top + rects[from].h/2 + dy;
+        const center = rects[from].top + rects[from].h/2 + rawDy;
         target = from;
         cards.forEach((c,i)=>{
           if(i===from) return;
@@ -3728,6 +3737,7 @@ function setupCardDrag(){
           if(i>from && mid < center) target = Math.max(target, i);
           if(i<from && mid > center) target = Math.min(target, i);
         });
+        target = Math.max(lo, Math.min(hi, target));
         cards.forEach((c,i)=>{
           if(i===from) return;
           let sh = 0;
