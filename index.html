@@ -4002,7 +4002,16 @@ function setupCardDrag(){
         if(!cancel && target !== from){
           const ids = state.todayRecord.propertyIds;
           const i = ids.indexOf(id);
-          if(i >= 0){ ids.splice(i,1); ids.splice(target,0,id); await saveTodayRecord(); }
+          if(i >= 0){
+            ids.splice(i,1); ids.splice(target,0,id);
+            // 옮긴 카드의 작업자는 카드가 놓인 위쪽부터 1·2·3번째로 번호를 다시 매김
+            const rr = state.todayRecord, stId = (rr.assign||{})[id];
+            if(stId){
+              const seq = ids.filter(x=>(rr.assign||{})[x]===stId);
+              if(seq.length>1){ rr.workOrder = rr.workOrder || {}; seq.forEach((x,k)=>{ rr.workOrder[x] = k+1; }); }
+            }
+            await saveTodayRecord();
+          }
         }
         render();
       };
