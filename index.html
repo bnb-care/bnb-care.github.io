@@ -907,7 +907,8 @@ function parseAssignDoc(text){
 function findPropByAddress(line){
   const norm = x=>String(x||'').replace(/\s+/g,'').replace(/[,，]/g,'');
   const rm = String(line).match(/[가-힣]+(?:로|길)\s*\d+\s*(?:길)?\s*\d*/);
-  const road = rm ? norm(rm[0]) : '';
+  const lm = !rm ? String(line).match(/[가-힣]+동\s*\d+-\d+/) : null;
+  const road = rm ? norm(rm[0]) : (lm ? norm(lm[0]) : '');
   const um = String(line).match(/(\d{3,4})\s*호/); const unit = um ? um[1] : '';
   if(!road) return null;
   let c = state.properties.filter(p=> norm(p.address).includes(road));
@@ -915,7 +916,7 @@ function findPropByAddress(line){
   return c.length===1 ? c[0] : null;
 }
 function parseCalMsg(text){
-  const out = []; let prop = null, hdr = '', cur = null, slashDs = null, slashMd = '', dotHdr = '', dotProp = null;
+  const out = []; let prop = null, hdr = '', cur = null, slashDs = null, slashMd = '', dotHdr = '', dotProp = null; let dotLast = null, pwB = '', pwA = '';
   const now = new Date();
   const toDs = (m,d)=>{
     let y = now.getFullYear();
@@ -939,11 +940,28 @@ function parseCalMsg(text){
       const endM = d2 < d1 ? m1 + 1 : m1;
       const stay = m1+'/'+d1+'~'+endM+'/'+d2;
       const pri = !!dr[4];
-      out.push({ hdr:dotHdr, prop:dotProp, ds: toDs(m1, d1), md: m1+'/'+d1, nights:'', guests:'', small:'', large:'', none:false, note: pri ? '당일 체크인' : '', pri, short:true, sched:true });
+      dotLast = ({ hdr:dotHdr, prop:dotProp, ds: toDs(m1, d1), md: m1+'/'+d1, nights:'', guests:'', small:'', large:'', none:false, note: pri ? '당일 체크인' : '', pri, short:true, sched:true, pw:(pwA?{b:pwB,a:pwA}:null) }); out.push(dotLast);
       return;
     }
-    if(line.indexOf('🔑')<0 && /[가-힣]+(?:로|길)\s*\d/.test(line) && !/^\d{1,2}\s*[./]/.test(line)){
-      dotHdr = line; dotProp = findPropByAddress(line); slashDs = null; cur = null; return;
+    if(line.indexOf('🔑')<0 && (/[가-힣]+(?:로|길)\s*\d/.test(line) || /[가-힣]+동\s*\d+-\d+/.test(line)) && !/^\d{1,2}\s*[./]/.test(line)){
+      dotHdr = line; dotProp = findPropByAddress(line); slashDs = null; cur = null; dotLast = null; pwB = ''; pwA = ''; return;
+    }
+    { const pb = line.match(/변경\s*전[^:：]*[:：]\s*([^\s]+)/), pa = line.match(/변경\s*후[^:：]*[:：]\s*([^\s]+)/);
+      if(dotHdr && (pb||pa) && /비번|비밀번호/.test(line) && !/^\d{1,2}\s*[./]/.test(line)){ if(pb) pwB = pb[1]; if(pa) pwA = pa[1]; return; } }
+    // 주소 줄 다음의 숙소 이름 줄 (주소로 못 찾았을 때만)
+    if(dotHdr && !dotProp && !dotLast && !/\d/.test(line) && line.length<=20){ const m = findBestPropertyMatch(line); if(m){ dotProp = m; dotHdr = dotHdr+' · '+line; return; } }
+    // 안내 줄: "■ 당일 체크인 아닙니다" → 바로 앞 날짜의 당일 여부
+    if(dotLast && /당일\s*체크인/.test(line) && !/^\d{1,2}\s*[./]/.test(line)){
+      const no = /아닙|아님|없/.test(line);
+      dotLast.pri = !no; dotLast.note = no ? '' : '당일 체크인'; return;
+    }
+    // "11.10일 화요일 체크아웃 청소" 형식
+    const d2 = line.match(/^(\d{1,2})\s*\.\s*(\d{1,2})\s*일?\s*(?:[월화수목금토일]요일|[월화수목금토일])?\s*(.*)$/);
+    if(d2 && dotHdr && /체크아웃|청소|당일/.test(d2[3])){
+      slashDs = null;
+      const pri2 = /당일/.test(d2[3]) && !/아닙|아님|없/.test(d2[3]);
+      dotLast = { hdr:dotHdr, prop:dotProp, ds: toDs(+d2[1], +d2[2]), md: d2[1]+'/'+d2[2], nights:'', guests:'', small:'', large:'', none:false, note: pri2 ? '당일 체크인' : '', pri: pri2, short:true, sched:true, pw:(pwA?{b:pwB,a:pwA}:null) };
+      out.push(dotLast); return;
     }
     // 짧은 형식: "10/23(금)" 날짜 줄 아래에 "301호-수건12장(체크인O)" 줄들
     const sd = line.match(/^(\d{1,2})\s*\/\s*(\d{1,2})\s*(?:\([월화수목금토일]\))?\s*$/);
@@ -979,10 +997,11 @@ function parseCalMsg(text){
     const lg = line.match(/큰\s*수건\s*[\]}）)]?\s*[:：]?\s*(\d+)/); if(lg){ cur.large = lg[1]; return; }
   });
   out.forEach(e=>{
+    if(e.pw && e.pw.a){ e.note = [e.pri?'당일 체크인':'', '청소 후 비번 '+e.pw.a+'(으)로 변경'].filter(Boolean).join(' · '); }
     if(e.note) return;
     e.note = e.none ? '당일예약 없음' : [e.nights?e.nights+'박':'', e.guests?'게스트 '+e.guests+'명':'', e.small?'작은수건 '+e.small:'', e.large?'큰수건 '+e.large:''].filter(Boolean).join(' · ');
   });
-  return out.filter(e=>e.note);
+  return out.filter(e=>e.note || e.sched);
 }
 async function calMsgLoadRec(ds){
   if(ds === state.selectedDate && state.todayRecord) return state.todayRecord;
@@ -1152,8 +1171,17 @@ async function calPreviewParts(entries){
     else if(e.already) st = '<span style="color:var(--ink-soft);">'+(e.note?'이미 입력돼 있어':'이미 일정에 있어')+' (건너뜀)</span>';
     else if(e.exists) st = '<span style="color:var(--teal);">✓ 이 날 카드에 넣어</span>';
     else st = `<label style="color:var(--clay);"><input type="checkbox" data-cm-add="${i}" ${e.sched?'checked':''}> 이 날 일정에 카드가 없어 · 카드도 추가</label>`;
+    let pwChk = '';
+    if(e.pw && e.pw.a && e.prop){
+      const nz = x=>String(x||'').replace(/[\s*]/g,'');
+      const saved = e.prop.password || '';
+      if(e.prop && (/매번/.test(saved) || !nz(saved))) pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--teal);">🔑 매번 바뀌는 곳 → 오늘 비번 칸에 ${esc(e.pw.b||'(없음)')} · 특이사항에 새 비번 ${esc(e.pw.a)}</div>`;
+      else if(nz(saved) && nz(saved)===nz(e.pw.b)) pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--teal);">🔑 변경 전 비번이 앱에 저장된 것(${esc(saved)})과 같아 ✓ · 이 날 이후 새 비번 ${esc(e.pw.a)}</div>`;
+      else if(nz(saved)===nz(e.pw.a)) pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--teal);">🔑 앱에 이미 새 비번(${esc(saved)})으로 저장돼 있어 ✓</div>`;
+      else pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--clay);">⚠️ 앱에 저장된 비번(${esc(saved||'없음')})이 변경 전(${esc(e.pw.b||'-')})·변경 후(${esc(e.pw.a)}) 둘 다와 달라</div>`;
+    }
     const priBox = (e.pri && e.prop && !e.already) ? `<label style="display:block;padding-left:14px;"><input type="checkbox" data-cm-pri="${i}" checked> 🔴 당일 체크인으로도 표시</label>` : '';
-    rows.push(`<div style="font-size:13px;padding:3px 0 3px 8px;"><b>${e.md}</b> ${esc(e.note)}${st?`<div style="padding-left:14px;">${st}</div>`:''}${priBox}</div>`);
+    rows.push(`<div style="font-size:13px;padding:3px 0 3px 8px;"><b>${e.md}</b> ${esc(e.note)}${st?`<div style="padding-left:14px;">${st}</div>`:''}${pwChk}${priBox}</div>`);
   });
   const todo = entries.filter(e=>e.prop && !e.already && e.exists).length;
   const missing = entries.filter(e=>e.prop && !e.already && !e.exists).length;
@@ -1179,6 +1207,7 @@ async function calPreviewParts(entries){
       rec.dayNotes = rec.dayNotes || {};
       const old = (rec.dayNotes[id]||'').trim();
       if(e.note) rec.dayNotes[id] = old ? old+' · '+e.note : e.note;
+      if(e.pw && e.pw.b && (/매번/.test(e.prop.password||'') || !String(e.prop.password||'').replace(/[\s*]/g,''))){ rec.dayPass = rec.dayPass||{}; if(!rec.dayPass[id]) rec.dayPass[id] = e.pw.b; }
       if(priSet.has(i) && !rec.priorityIds.includes(id)) rec.priorityIds.push(id);
       touched.add(e.ds); n++;
     });
