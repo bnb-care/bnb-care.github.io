@@ -901,8 +901,19 @@ function parseAssignDoc(text){
   return groups;
 }
 // ===== 청소 일정 캘린더 메시지 붙여넣기: "🔑 1208호 🔑 PW : … / 10월 22일(1박) / 게스트 2명 / [작은수건] 6" → 날짜별 특이사항 =====
+// 주소 줄("마포구 잔다리로 6길 5, 804호")로 숙소 찾기: 도로명+번지가 같고, 호수가 있으면 호수도 맞는 숙소가 하나일 때만
+function findPropByAddress(line){
+  const norm = x=>String(x||'').replace(/\s+/g,'').replace(/[,，]/g,'');
+  const rm = String(line).match(/[가-힣]+(?:로|길)\s*\d+\s*(?:길)?\s*\d*/);
+  const road = rm ? norm(rm[0]) : '';
+  const um = String(line).match(/(\d{3,4})\s*호/); const unit = um ? um[1] : '';
+  if(!road) return null;
+  let c = state.properties.filter(p=> norm(p.address).includes(road));
+  if(unit){ const c2 = c.filter(p=> norm((p.address||'')+(p.name||'')).includes(unit)); if(c2.length) c = c2; }
+  return c.length===1 ? c[0] : null;
+}
 function parseCalMsg(text){
-  const out = []; let prop = null, hdr = '', cur = null;
+  const out = []; let prop = null, hdr = '', cur = null, slashDs = null, slashMd = '', dotHdr = '', dotProp = null;
   const now = new Date();
   const toDs = (m,d)=>{
     let y = now.getFullYear();
@@ -918,7 +929,37 @@ function parseCalMsg(text){
   };
   String(text||'').split(/\r?\n/).forEach(raw=>{
     const line = raw.trim(); if(!line || /^[-—_=\s]+$/.test(line)) return;
+    // 스케줄표 형식: 주소·비번 줄 아래에 "11.01 일 (당일) 1~6" 줄들 (날짜 = 청소일, (당일) = 당일 체크인, 1~6 = 투숙 기간)
+    const dr = line.match(/^(\d{1,2})\s*\.\s*(\d{1,2})\s*([월화수목금토일])?\s*(\(\s*당일\s*\))?\s*(\d{1,2})\s*~\s*(\d{1,2})/);
+    if(dr){
+      slashDs = null;
+      const m1 = +dr[1], d1 = +dr[2], d2 = +dr[6];
+      const endM = d2 < d1 ? m1 + 1 : m1;
+      const stay = m1+'/'+d1+'~'+endM+'/'+d2;
+      const pri = !!dr[4];
+      out.push({ hdr:dotHdr, prop:dotProp, ds: toDs(m1, d1), md: m1+'/'+d1, nights:'', guests:'', small:'', large:'', none:false, note: pri ? '당일 체크인' : '', pri, short:true });
+      return;
+    }
+    if(line.indexOf('🔑')<0 && /[가-힣]+(?:로|길)\s*\d/.test(line) && !/^\d{1,2}\s*[./]/.test(line)){
+      dotHdr = line; dotProp = findPropByAddress(line); slashDs = null; cur = null; return;
+    }
+    // 짧은 형식: "10/23(금)" 날짜 줄 아래에 "301호-수건12장(체크인O)" 줄들
+    const sd = line.match(/^(\d{1,2})\s*\/\s*(\d{1,2})\s*(?:\([월화수목금토일]\))?\s*$/);
+    if(sd){ slashDs = toDs(+sd[1], +sd[2]); slashMd = sd[1]+'/'+sd[2]; cur = null; return; }
+    if(slashDs && line.indexOf('🔑')<0){
+      const sl = line.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+      if(sl){
+        const name = sl[1].trim(), content = sl[2].trim();
+        const pri = /체크인\s*[OoㅇⓄ○]/.test(content);
+        const tw = content.match(/수건\s*(\d+)\s*장?/);
+        let rest = content.replace(/\(?\s*체크인\s*[OoㅇⓄ○XxⓍ×]\s*\)?/g,'').replace(/수건\s*\d+\s*장?/g,'').replace(/[()\s]+$/,'').replace(/^[()\s,·]+/,'').trim();
+        const note = [tw?'수건 '+tw[1]+'장':'', pri?'당일 체크인':'', rest].filter(Boolean).join(' · ');
+        out.push({ hdr:name, prop:findProp(name), ds:slashDs, md:slashMd, nights:'', guests:'', small:'', large:'', none:false, note, pri, short:true });
+        return;
+      }
+    }
     if(line.indexOf('🔑')>=0){
+      slashDs = null;
       const m = line.match(/🔑\s*(.+?)\s*🔑/);
       hdr = m ? m[1].trim() : line.replace(/🔑/g,'').replace(/PW.*$/i,'').trim();
       prop = findProp(hdr); cur = null; return;
@@ -926,6 +967,7 @@ function parseCalMsg(text){
     const dm = line.match(/^(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:\(\s*(\d+)\s*박\s*\))?\s*(.*)$/);
     if(dm){
       const rest = dm[4] || '';
+      slashDs = null;
       cur = { hdr, prop, ds: toDs(+dm[1], +dm[2]), md: dm[1]+'/'+dm[2], nights: dm[3]||'', guests:'', small:'', large:'', none: /당일\s*예약/.test(rest) };
       out.push(cur); return;
     }
@@ -935,6 +977,7 @@ function parseCalMsg(text){
     const lg = line.match(/큰\s*수건\s*[\]}）)]?\s*[:：]?\s*(\d+)/); if(lg){ cur.large = lg[1]; return; }
   });
   out.forEach(e=>{
+    if(e.note) return;
     e.note = e.none ? '당일예약 없음' : [e.nights?e.nights+'박':'', e.guests?'게스트 '+e.guests+'명':'', e.small?'작은수건 '+e.small:'', e.large?'큰수건 '+e.large:''].filter(Boolean).join(' · ');
   });
   return out.filter(e=>e.note);
@@ -1033,7 +1076,9 @@ function openPasteSheet(){
   document.getElementById('ps_next').onclick = ()=>{
     const text = document.getElementById('ps_text').value;
     const entries = parseCalMsg(text);
-    const groups = parseAssignDoc(text).filter(g=>g.items.length);
+    let groups = parseAssignDoc(text).filter(g=>g.items.length);
+    // 날짜 스케줄로 읽힌 경우, "01 일 (당일) 1~6" 같은 줄이 번호 줄로 잘못 잡힌 이름 없는 묶음은 버림
+    if(entries.length) groups = groups.filter(g=>g.name);
     const loose = (!entries.length && !groups.length) ? parseLooseAssign(text) : [];
     if(!entries.length && !groups.length && !loose.length){ alert('읽을 수 있는 줄을 못 찾았어.\n배정 문서는 "조아라님" 다음 줄에 "1.숙소 / 비번",\n수건 메시지는 "10월 22일(1박)" 형식,\n줄글은 "조정이님 엘지2개 박미정님 창천동잇다3룸"처럼 직원 이름(님)이 들어 있어야 해.'); return; }
     root.remove(); openPastePreview(groups, entries, text, loose);
@@ -1054,6 +1099,7 @@ function assignPreviewParts(groups){
   const html = `<div style="font-weight:800;margin-top:12px;padding-top:8px;border-top:1px solid var(--paper-line);">배정 문서로 읽었어 · ${esc(renderDateLabel())}</div>
     <div style="font-size:12px;color:var(--ink-soft);">적용하면 작업자 배정·작업 순서·오늘 비번·메모가 들어가.</div>${rows}`;
   const apply = ()=>{
+    if(!r) return 0;
     r.assign = r.assign || {}; r.dayPass = r.dayPass || {}; r.dayNotes = r.dayNotes || {};
     let n = 0; const orderByStaff = [];
     groups.forEach(g=>{
@@ -1080,6 +1126,14 @@ async function calPreviewParts(entries){
   for(const ds of [...new Set(entries.map(e=>e.ds))]) recs[ds] = await calMsgLoadRec(ds);
   entries.forEach(e=>{
     const rec = recs[e.ds];
+    // "301호"처럼 번호만 있어 숙소가 여러 곳이면, 그날 일정에 있는 카드 중 하나로 정해지면 그걸 씀
+    if(!e.prop){
+      const num = String(e.hdr||'').match(/^(\d{3,4})\s*호?$/);
+      if(num && rec){
+        const hits = state.properties.filter(p=> new RegExp('(^|\\D)'+num[1]+'(\\D|$)').test(p.name) && (rec.propertyIds||[]).includes(p.id));
+        if(hits.length===1) e.prop = hits[0];
+      }
+    }
     e.exists = !!(e.prop && rec && (rec.propertyIds||[]).includes(e.prop.id));
     const old = e.exists ? (((rec.dayNotes||{})[e.prop.id])||'').trim() : '';
     e.already = !!old && (old.includes(e.note) || (/게스트/.test(old) && /수건/.test(old)));
@@ -1088,14 +1142,16 @@ async function calPreviewParts(entries){
   entries.forEach((e,i)=>{
     if(e.hdr !== lastHdr){
       lastHdr = e.hdr;
-      rows.push(`<div style="font-weight:700;margin-top:10px;">${esc(e.hdr||'(숙소 이름 없음)')}${e.prop?` → ${esc(e.prop.name)}`:' <span style="color:var(--clay);font-size:12px;">⚠️ 숙소를 못 찾았어 (건너뜀)</span>'}</div>`);
+      const pick = e.prop ? '' : `<div style="font-weight:400;"><select data-cm-map="${i}" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--paper-line);border-radius:8px;"><option value="">숙소를 직접 고르기…</option>${state.properties.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko')).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>`;
+      rows.push(`<div style="font-weight:700;margin-top:10px;">${esc(e.hdr||'(숙소 이름 없음)')}${e.prop?` → ${esc(e.prop.name)}`:' <span style="color:var(--clay);font-size:12px;">⚠️ 숙소를 못 찾았어 (고르지 않으면 건너뜀)</span>'}${pick}</div>`);
     }
     let st = '';
     if(!e.prop) st = '';
     else if(e.already) st = '<span style="color:var(--ink-soft);">이미 입력돼 있어 (건너뜀)</span>';
     else if(e.exists) st = '<span style="color:var(--teal);">✓ 이 날 카드에 넣어</span>';
     else st = `<label style="color:var(--clay);"><input type="checkbox" data-cm-add="${i}"> 이 날 일정에 카드가 없어 · 카드도 추가</label>`;
-    rows.push(`<div style="font-size:13px;padding:3px 0 3px 8px;"><b>${e.md}</b> ${esc(e.note)}${st?`<div style="padding-left:14px;">${st}</div>`:''}</div>`);
+    const priBox = (e.pri && e.prop && !e.already) ? `<label style="display:block;padding-left:14px;"><input type="checkbox" data-cm-pri="${i}" checked> 🔴 당일 체크인으로도 표시</label>` : '';
+    rows.push(`<div style="font-size:13px;padding:3px 0 3px 8px;"><b>${e.md}</b> ${esc(e.note)}${st?`<div style="padding-left:14px;">${st}</div>`:''}${priBox}</div>`);
   });
   const todo = entries.filter(e=>e.prop && !e.already && e.exists).length;
   const missing = entries.filter(e=>e.prop && !e.already && !e.exists).length;
@@ -1103,6 +1159,7 @@ async function calPreviewParts(entries){
     <div style="font-size:12px;color:var(--ink-soft);">카드가 없는 날은 체크해야 카드를 만들어서 넣고, 체크 안 하면 건너뛰어.<br>카드에 넣을 곳 ${todo}건${missing?` · 카드 없는 곳 ${missing}건`:''}</div>${rows.join('')}`;
   const apply = (root)=>{
     const addSet = new Set([...root.querySelectorAll('[data-cm-add]')].filter(c=>c.checked).map(c=>+c.dataset.cmAdd));
+    const priSet = new Set([...root.querySelectorAll('[data-cm-pri]')].filter(c=>c.checked).map(c=>+c.dataset.cmPri));
     let n = 0, added = 0, skipped = 0; const touched = new Set();
     entries.forEach((e,i)=>{
       if(!e.prop || e.already || (!e.exists && !addSet.has(i))){ skipped++; return; }
@@ -1120,6 +1177,7 @@ async function calPreviewParts(entries){
       rec.dayNotes = rec.dayNotes || {};
       const old = (rec.dayNotes[id]||'').trim();
       rec.dayNotes[id] = old ? old+' · '+e.note : e.note;
+      if(priSet.has(i) && !rec.priorityIds.includes(id)) rec.priorityIds.push(id);
       touched.add(e.ds); n++;
     });
     return { n, added, skipped, touched, recs };
@@ -1137,6 +1195,14 @@ async function openPastePreview(groups, entries, text, loose){
     <div style="font-size:12px;color:var(--ink-soft);">아직 아무것도 저장되지 않았어. 맞으면 "적용"을 눌러줘.</div>${A?A.html:''}${L?L.html:''}${C?C.html:''}
     <div class="sheet-actions"><button class="cancel-btn" id="pv_back">뒤로</button><button class="save-btn" id="pv_go">적용</button></div></div>`;
   root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
+  root.querySelectorAll('[data-cm-map]').forEach(sel=>{
+    sel.onchange = ()=>{
+      if(!sel.value) return;
+      const pr = propById(sel.value), h = entries[+sel.dataset.cmMap].hdr;
+      entries.forEach(x=>{ if(x.hdr===h) x.prop = pr; });
+      root.remove(); openPastePreview(groups, entries, text, loose);
+    };
+  });
   document.getElementById('pv_back').onclick = ()=>{ root.remove(); openPasteSheet(); setTimeout(()=>{ const t=document.getElementById('ps_text'); if(t) t.value = text||''; },0); };
   document.getElementById('pv_go').onclick = async ()=>{
     const btn = document.getElementById('pv_go'); btn.disabled = true; btn.textContent = '저장 중…';
@@ -2718,6 +2784,25 @@ function splitNotes(notes){
     .map(s=>s.trim())
     .filter(s=>s.length>0);
 }
+
+// 폰에서는 카카오맵 앱을 바로 열기 (홈 화면 앱에서 웹 링크를 누르면 "완료" 버튼 달린 빈 브라우저가 떠서). 앱이 없으면 웹으로
+function setupKakaoLinks(){
+  const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if(!mobile) return;
+  document.querySelectorAll('a[href^="https://map.kakao.com/link/search/"]').forEach(a=>{
+    a.onclick = (ev)=>{
+      ev.preventDefault(); ev.stopPropagation();
+      const web = a.getAttribute('href');
+      const q = web.replace('https://map.kakao.com/link/search/','');
+      let left = false;
+      const mark = ()=>{ left = true; };
+      document.addEventListener('visibilitychange', mark, {once:true});
+      window.addEventListener('pagehide', mark, {once:true});
+      window.location.href = 'kakaomap://search?q=' + q;
+      setTimeout(()=>{ if(!left && !document.hidden) window.open(web, '_blank'); }, 1500);
+    };
+  });
+}
 function kakaoMapUrl(address){
   return 'https://map.kakao.com/link/search/' + encodeURIComponent(address);
 }
@@ -3782,6 +3867,7 @@ function attachHandlers(){
     el.onclick = ()=> triggerCompletionReport(el.dataset.report);
   });
   setupCardDrag();
+  setupKakaoLinks();
   document.querySelectorAll('[data-move]').forEach(el=>{
     el.onclick = (ev)=>{
       ev.stopPropagation();
