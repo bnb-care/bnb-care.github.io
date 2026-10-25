@@ -915,6 +915,8 @@ function findPropByAddress(line){
   if(unit){ const c2 = c.filter(p=> norm((p.address||'')+(p.name||'')).includes(unit)); if(c2.length) c = c2; }
   return c.length===1 ? c[0] : null;
 }
+// 비번이 매번 바뀌는 숙소인지: 비번 칸에 '매번'이 있거나, 비번이 비었거나, 참고사항에 '매번 바뀜/변경'이 적혀 있으면
+function isMaebeonProp(p){ if(!p) return false; const pw = String(p.password||''); return /매번/.test(pw) || !pw.replace(/[\s*]/g,'') || /매번\s*(바뀜|바뀌|변경|변함)/.test(String(p.notes||'')); }
 function parseCalMsg(text){
   const out = []; let prop = null, hdr = '', cur = null, slashDs = null, slashMd = '', dotHdr = '', dotProp = null; let dotLast = null, pwB = '', pwA = '';
   const now = new Date();
@@ -1175,7 +1177,7 @@ async function calPreviewParts(entries){
     if(e.pw && e.pw.a && e.prop){
       const nz = x=>String(x||'').replace(/[\s*]/g,'');
       const saved = e.prop.password || '';
-      if(e.prop && (/매번/.test(saved) || !nz(saved))) pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--teal);">🔑 매번 바뀌는 곳 → 오늘 비번 칸에 ${esc(e.pw.b||'(없음)')} · 특이사항에 새 비번 ${esc(e.pw.a)}</div>`;
+      if(isMaebeonProp(e.prop)) pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--teal);">🔑 매번 바뀌는 곳 → 오늘 비번 칸에 ${esc(e.pw.b||'(없음)')} · 특이사항에 새 비번 ${esc(e.pw.a)}</div>`;
       else if(nz(saved) && nz(saved)===nz(e.pw.b)) pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--teal);">🔑 변경 전 비번이 앱에 저장된 것(${esc(saved)})과 같아 ✓ · 이 날 이후 새 비번 ${esc(e.pw.a)}</div>`;
       else if(nz(saved)===nz(e.pw.a)) pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--teal);">🔑 앱에 이미 새 비번(${esc(saved)})으로 저장돼 있어 ✓</div>`;
       else pwChk = `<div style="padding-left:14px;font-size:12px;color:var(--clay);">⚠️ 앱에 저장된 비번(${esc(saved||'없음')})이 변경 전(${esc(e.pw.b||'-')})·변경 후(${esc(e.pw.a)}) 둘 다와 달라</div>`;
@@ -1207,7 +1209,7 @@ async function calPreviewParts(entries){
       rec.dayNotes = rec.dayNotes || {};
       const old = (rec.dayNotes[id]||'').trim();
       if(e.note) rec.dayNotes[id] = old ? old+' · '+e.note : e.note;
-      if(e.pw && e.pw.b && (/매번/.test(e.prop.password||'') || !String(e.prop.password||'').replace(/[\s*]/g,''))){ rec.dayPass = rec.dayPass||{}; if(!rec.dayPass[id]) rec.dayPass[id] = e.pw.b; }
+      if(e.pw && e.pw.b && isMaebeonProp(e.prop)){ rec.dayPass = rec.dayPass||{}; if(!rec.dayPass[id]) rec.dayPass[id] = e.pw.b; }
       if(priSet.has(i) && !rec.priorityIds.includes(id)) rec.priorityIds.push(id);
       touched.add(e.ds); n++;
     });
@@ -1956,12 +1958,21 @@ async function removeJobFromToday(id){
   render();
 }
 function parseScheduleText(text, defYear){
-  const out = {};
+  const out = {}; let hdrName = '';
   String(text||'').split(/\r?\n/).forEach(line=>{
+    // "***** 망원동 1층 스케쥴표 *****" 머리글 → 아래 "10/28(수) - 1층 (당일체크인 o)" 줄들의 숙소 이름
+    const hm = line.match(/^[\s*★☆■▶\-=]*(.+?)\s*스케[줄쥴]\s*표[\s*★☆■▶\-=]*$/);
+    if(hm){ hdrName = hm[1].replace(/[*★☆]/g,'').trim(); return; }
     const m = line.match(/^\s*(?:(\d{4})[-\/.])?(\d{1,2})\s*[\/\-.월]\s*(\d{1,2})\s*일?\s*(?:\([^)]*\))?\s*[:：]?\s*(.*)$/);
     if(!m) return;
     const y = m[1] ? Number(m[1]) : defYear;
     const ds = y+'-'+pad2(Number(m[2]))+'-'+pad2(Number(m[3]));
+    if(hdrName && /^[-–]/.test(m[4].trim())){
+      const c = m[4];
+      const yes = /당일\s*체크인\s*[OoㅇⓄ○]/.test(c), pending = /당일\s*체크인\s*(미정|확인|\?)/.test(c);
+      (out[ds] = out[ds] || []).push({ raw: hdrName, today: yes, note: pending ? '당일 체크인 미정' : '' });
+      return;
+    }
     m[4].split(/[,，]/).map(x=>x.trim()).filter(Boolean).forEach(it=>{
       const parts = it.split('|');
       let raw = parts[0].trim().replace(/^[\-–•·*▶▷\s]+/, '');
@@ -2191,7 +2202,7 @@ function openImportSheet(){
         if(!p){ nSkip++; return `<div style="margin:3px 0 3px 12px;color:var(--ink-soft);">· ${esc(e.raw)} <span style="font-size:11px;">(건너뜀)</span></div>`; }
         const has = rec && (rec.propertyIds||[]).includes(id);
         if(has) nHave++; else nAdd++;
-        return `<div style="margin:3px 0 3px 12px;">· ${esc(p.name)}${e.today?' <b style="color:var(--clay)">🔴 당일</b>':''} ${has?'<span style="font-size:11px;color:var(--ink-soft);">이미 있음</span>':'<b style="font-size:11px;color:var(--teal);">추가</b>'}</div>`;
+        return `<div style="margin:3px 0 3px 12px;">· ${esc(p.name)}${e.today?' <b style="color:var(--clay)">🔴 당일</b>':''}${e.note?` <span style="font-size:11px;color:var(--ink-soft);">(${esc(e.note)})</span>`:''} ${has?'<span style="font-size:11px;color:var(--ink-soft);">이미 있음</span>':'<b style="font-size:11px;color:var(--teal);">추가</b>'}</div>`;
       }).join('');
       const wd = '일월화수목금토'[new Date(ds+'T00:00:00').getDay()];
       return `<div style="margin:8px 0;font-size:13px;"><b>${labDs(ds)}(${wd})</b>${items}</div>`;
