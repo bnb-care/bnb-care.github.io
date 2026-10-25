@@ -939,7 +939,7 @@ function parseCalMsg(text){
       const endM = d2 < d1 ? m1 + 1 : m1;
       const stay = m1+'/'+d1+'~'+endM+'/'+d2;
       const pri = !!dr[4];
-      out.push({ hdr:dotHdr, prop:dotProp, ds: toDs(m1, d1), md: m1+'/'+d1, nights:'', guests:'', small:'', large:'', none:false, note: pri ? '당일 체크인' : '', pri, short:true });
+      out.push({ hdr:dotHdr, prop:dotProp, ds: toDs(m1, d1), md: m1+'/'+d1, nights:'', guests:'', small:'', large:'', none:false, note: pri ? '당일 체크인' : '', pri, short:true, sched:true });
       return;
     }
     if(line.indexOf('🔑')<0 && /[가-힣]+(?:로|길)\s*\d/.test(line) && !/^\d{1,2}\s*[./]/.test(line)){
@@ -1138,7 +1138,7 @@ async function calPreviewParts(entries){
     }
     e.exists = !!(e.prop && rec && (rec.propertyIds||[]).includes(e.prop.id));
     const old = e.exists ? (((rec.dayNotes||{})[e.prop.id])||'').trim() : '';
-    e.already = !!old && (old.includes(e.note) || (/게스트/.test(old) && /수건/.test(old)));
+    e.already = (e.exists && !e.note && !e.pri) || (!!old && !!e.note && (old.includes(e.note) || (/게스트/.test(old) && /수건/.test(old))));
   });
   const rows = []; let lastHdr = null;
   entries.forEach((e,i)=>{
@@ -1149,16 +1149,16 @@ async function calPreviewParts(entries){
     }
     let st = '';
     if(!e.prop) st = '';
-    else if(e.already) st = '<span style="color:var(--ink-soft);">이미 입력돼 있어 (건너뜀)</span>';
+    else if(e.already) st = '<span style="color:var(--ink-soft);">'+(e.note?'이미 입력돼 있어':'이미 일정에 있어')+' (건너뜀)</span>';
     else if(e.exists) st = '<span style="color:var(--teal);">✓ 이 날 카드에 넣어</span>';
-    else st = `<label style="color:var(--clay);"><input type="checkbox" data-cm-add="${i}"> 이 날 일정에 카드가 없어 · 카드도 추가</label>`;
+    else st = `<label style="color:var(--clay);"><input type="checkbox" data-cm-add="${i}" ${e.sched?'checked':''}> 이 날 일정에 카드가 없어 · 카드도 추가</label>`;
     const priBox = (e.pri && e.prop && !e.already) ? `<label style="display:block;padding-left:14px;"><input type="checkbox" data-cm-pri="${i}" checked> 🔴 당일 체크인으로도 표시</label>` : '';
     rows.push(`<div style="font-size:13px;padding:3px 0 3px 8px;"><b>${e.md}</b> ${esc(e.note)}${st?`<div style="padding-left:14px;">${st}</div>`:''}${priBox}</div>`);
   });
   const todo = entries.filter(e=>e.prop && !e.already && e.exists).length;
   const missing = entries.filter(e=>e.prop && !e.already && !e.exists).length;
-  const html = `<div style="font-weight:800;margin-top:12px;padding-top:8px;border-top:1px solid var(--paper-line);">수건·인원 메시지로 읽었어</div>
-    <div style="font-size:12px;color:var(--ink-soft);">카드가 없는 날은 체크해야 카드를 만들어서 넣고, 체크 안 하면 건너뛰어.<br>카드에 넣을 곳 ${todo}건${missing?` · 카드 없는 곳 ${missing}건`:''}</div>${rows.join('')}`;
+  const html = `<div style="font-weight:800;margin-top:12px;padding-top:8px;border-top:1px solid var(--paper-line);">${entries.every(e=>e.sched)?'스케줄표로 읽었어':'수건·인원 메시지로 읽었어'}</div>
+    <div style="font-size:12px;color:var(--ink-soft);">카드가 없는 날은 체크한 날만 카드를 만들어서 넣고, 체크 해제하면 건너뛰어.<br>카드에 넣을 곳 ${todo}건${missing?` · 카드 없는 곳 ${missing}건`:''}</div>${rows.join('')}`;
   const apply = (root)=>{
     const addSet = new Set([...root.querySelectorAll('[data-cm-add]')].filter(c=>c.checked).map(c=>+c.dataset.cmAdd));
     const priSet = new Set([...root.querySelectorAll('[data-cm-pri]')].filter(c=>c.checked).map(c=>+c.dataset.cmPri));
@@ -1178,7 +1178,7 @@ async function calPreviewParts(entries){
       }
       rec.dayNotes = rec.dayNotes || {};
       const old = (rec.dayNotes[id]||'').trim();
-      rec.dayNotes[id] = old ? old+' · '+e.note : e.note;
+      if(e.note) rec.dayNotes[id] = old ? old+' · '+e.note : e.note;
       if(priSet.has(i) && !rec.priorityIds.includes(id)) rec.priorityIds.push(id);
       touched.add(e.ds); n++;
     });
@@ -2053,6 +2053,10 @@ function openImportSheet(){
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
     document.getElementById('imp_next').onclick = ()=>{
       inText = document.getElementById('imp_text').value;
+      { // 스케줄표(주소 + "11.01 일 (당일) 1~6") · "10/23(금) 301호-수건12장" 형식은 붙여넣기 미리보기로 처리
+        const se = parseCalMsg(inText).filter(e=>e.short);
+        if(se.length){ root.remove(); openPastePreview([], se, inText, null); return; }
+      }
       if(isKakaoFormat(inText)){ stepKakao(); return; }
       if(isDayParenFormat(inText)){
         const mo = state.calMonth ? state.calMonth.month + 1 : new Date().getMonth()+1;
