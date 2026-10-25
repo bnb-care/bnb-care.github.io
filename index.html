@@ -911,14 +911,17 @@ function findPropByAddress(line){
   const road = rm ? norm(rm[0]) : (lm ? norm(lm[0]) : '');
   const um = String(line).match(/(\d{3,4})\s*호/); const unit = um ? um[1] : '';
   if(!road) return null;
-  let c = state.properties.filter(p=> norm(p.address).includes(road));
+  const fm = String(line).match(/[가-힣]+로\s*\d+[가-힣]*길\s*\d+(?:-\d+)?/);
+  let c = [];
+  if(fm){ const fr = norm(fm[0]); c = state.properties.filter(p=> norm(p.address).includes(fr)); }
+  if(!c.length) c = state.properties.filter(p=> norm(p.address).includes(road));
   if(unit){ const c2 = c.filter(p=> norm((p.address||'')+(p.name||'')).includes(unit)); if(c2.length) c = c2; }
   return c.length===1 ? c[0] : null;
 }
 // 비번이 매번 바뀌는 숙소인지: 비번 칸에 '매번'이 있거나, 비번이 비었거나, 참고사항에 '매번 바뀜/변경'이 적혀 있으면
 function isMaebeonProp(p){ if(!p) return false; const pw = String(p.password||''); return /매번/.test(pw) || !pw.replace(/[\s*]/g,'') || /매번\s*(바뀜|바뀌|변경|변함)/.test(String(p.notes||'')); }
 function parseCalMsg(text){
-  const out = []; let prop = null, hdr = '', cur = null, slashDs = null, slashMd = '', dotHdr = '', dotProp = null; let dotLast = null, pwB = '', pwA = '';
+  const out = []; let prop = null, hdr = '', cur = null, slashDs = null, slashMd = '', dotHdr = '', dotProp = null; let dotLast = null, pwB = '', pwA = ''; let blk = null;
   const now = new Date();
   const toDs = (m,d)=>{
     let y = now.getFullYear();
@@ -934,6 +937,29 @@ function parseCalMsg(text){
   };
   String(text||'').split(/\r?\n/).forEach(raw=>{
     const line = raw.trim(); if(!line || /^[-—_=\s]+$/.test(line)) return;
+    // 창천동식 표: "11.1■당일 주소 303호" / "11.5■(2개)" 아래 "다음날 주소" 줄들 / "11.28■당일2개" 아래 주소 줄들
+    const cm = line.match(/^(\d{1,2})\s*\.\s*(\d{1,2})\s*■\s*(.*)$/);
+    if(cm){
+      slashDs = null; cur = null; dotLast = null;
+      const rest = cm[3];
+      const dsC = toDs(+cm[1], +cm[2]), mdC = cm[1]+'/'+cm[2];
+      const pr = /다음날/.test(rest) ? false : (/당일/.test(rest) ? true : null);
+      const am = rest.match(/(?:(?:당일|다음날)\s*)?([가-힣]+[^\s]*.*\d.*호)\s*$/);
+      if(am){
+        out.push({ hdr:am[1].trim(), prop:findPropByAddress(am[1]), ds:dsC, md:mdC, nights:'', guests:'', small:'', large:'', none:false, note: pr?'당일 체크인':'', pri:!!pr, short:true, sched:true });
+        blk = null;
+      } else blk = { ds:dsC, md:mdC, pri:pr };
+      return;
+    }
+    if(blk){
+      const bm = line.match(/^(당일|다음날)?\s*([가-힣]+.*\d.*호)\s*$/);
+      if(bm){
+        const pr = bm[1] ? bm[1]==='당일' : !!blk.pri;
+        out.push({ hdr:bm[2].trim(), prop:findPropByAddress(bm[2]), ds:blk.ds, md:blk.md, nights:'', guests:'', small:'', large:'', none:false, note: pr?'당일 체크인':'', pri:pr, short:true, sched:true });
+        return;
+      }
+      blk = null;
+    }
     // 스케줄표 형식: 주소·비번 줄 아래에 "11.01 일 (당일) 1~6" 줄들 (날짜 = 청소일, (당일) = 당일 체크인, 1~6 = 투숙 기간)
     const dr = line.match(/^(\d{1,2})\s*\.\s*(\d{1,2})\s*([월화수목금토일])?\s*(\(\s*당일\s*\))?\s*(\d{1,2})\s*~\s*(\d{1,2})/);
     if(dr){
