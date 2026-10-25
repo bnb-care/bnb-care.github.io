@@ -255,7 +255,9 @@
   .assign-row select{flex:1;padding:8px;border-radius:8px;border:1px solid var(--paper-line);font-size:14px;font-family:var(--sans);background:#fff;}
   .warn-line{font-size:12px;color:var(--clay);margin-top:4px;line-height:1.4;}
   .worker-badge{flex-shrink:0;font-size:10px;font-weight:700;background:#eee;color:#444;border-radius:6px;padding:1px 6px;}
-  .worker-badge .wk-no{font-size:inherit;font-weight:inherit;color:inherit;line-height:inherit;}
+  .head-note{font-size:12.5px;color:var(--clay);font-weight:600;line-height:1.35;word-break:keep-all;}
+.job-card.open .head-note{display:none;}
+.worker-badge .wk-no{font-size:inherit;font-weight:inherit;color:inherit;line-height:inherit;}
   .day-note{width:100%;box-sizing:border-box;border:1px solid var(--paper-line);border-radius:8px;padding:8px;font-size:13px;font-family:var(--sans);resize:vertical;min-height:36px;}
   .staff-item{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--paper-line);font-size:13px;}
   .staff-item .sname{font-weight:700;font-size:14px;}
@@ -3031,6 +3033,7 @@ function renderScheduleCards(){
               ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}${(()=>{ const l=staffAssignedProps(assignedSt.id); const k=l.indexOf(id); return (l.length>1 && k>=0) ? ' <span class="wk-no">'+(k+1)+'</span>' : ''; })()}</span>` : ''}
             </div>
             <div style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}${conditionTask ? `<button class="qb ${conditionDone?'on':''}" data-stop-toggle="1" ${conditionDone?`data-report="${id}"`:''} title="${conditionDone ? '완료 보고하기'+(lastReportFor(id)?' (최근 보고 '+formatSendTime(lastReportFor(id).ts)+')':'') : '컨디션 체크를 마치면 보고할 수 있어'}">📨</button>` : ''}</span></div>
+            ${dayNote ? `<div class="head-note" style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;">📝 ${esc(dayNote)}</div>` : ''}
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
           ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
