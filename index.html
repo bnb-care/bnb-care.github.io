@@ -477,7 +477,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com'];
+const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
 let cloud = null; // { auth, db, user, fn }
@@ -519,6 +519,19 @@ window.storage = {
       return { key, deleted:true };
     }
     return localStore.delete(key);
+  },
+  // 오늘 이후 일정 기록을 한 번에(요청 1번) 가져옴: { 'YYYY-MM-DD': record }
+  async recordsFrom(ds){
+    const out = {};
+    if(CLOUD_ENABLED && cloud && cloud.user){
+      const q = cloud.fn.query(cloud.fn.collection(cloud.db,'kv'),
+        cloud.fn.where(cloud.fn.documentId(),'>=','today:'+ds), cloud.fn.where(cloud.fn.documentId(),'<=','today:\uf8ff'));
+      const snap = await cloud.fn.getDocs(q);
+      snap.forEach(d=>{ try{ const rec = JSON.parse(d.data().value); if(rec) out[d.id.replace('today:','')] = rec; }catch(e){} });
+      return out;
+    }
+    Object.keys(localStorage).filter(k=>k.startsWith('today:')).forEach(k=>{ const d = k.replace('today:',''); if(d>=ds){ try{ out[d] = JSON.parse(localStorage.getItem(k)); }catch(e){} } });
+    return out;
   },
   async list(prefix, shared){
     if(CLOUD_ENABLED && prefix && prefix.startsWith('today:') && cloud && cloud.user){
@@ -1745,18 +1758,12 @@ async function washBlockedBy(ds, pid){
   if(washLockExempt(pid)) return null;
   try{
     const today = todayStr();
-    let keys = []; try{ const r = await window.storage.list('today:', false); keys = (r && r.keys) || []; }catch(e){}
-    const dates = keys.map(k=>k.replace('today:','')).filter(d=>d>=today);
-    if(ds>=today && !dates.includes(ds)) dates.push(ds);
-    const list = [];
-    for(const d of dates.sort()){
-      let rec = null;
-      if(d===state.selectedDate && state.todayRecord) rec = state.todayRecord;
-      else if(state.monthRecords[d]) rec = state.monthRecords[d];
-      else { try{ const x = await window.storage.get('today:'+d, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){} }
-      if(rec && (rec.propertyIds||[]).includes(pid)) list.push({d, rec});
-    }
-    list.sort((a,b)=>a.d.localeCompare(b.d));
+    let recs = {};
+    try{ recs = await window.storage.recordsFrom(today); }catch(e){ recs = {}; }
+    // 화면에 이미 있는 최신 상태를 우선
+    Object.keys(state.monthRecords||{}).forEach(d=>{ if(d>=today && state.monthRecords[d]) recs[d] = state.monthRecords[d]; });
+    if(state.selectedDate && state.selectedDate>=today && state.todayRecord) recs[state.selectedDate] = state.todayRecord;
+    const list = Object.keys(recs).sort().filter(d=> (recs[d].propertyIds||[]).includes(pid)).map(d=>({d, rec:recs[d]}));
     if(!list.length || list[0].d === ds) return null;
     const other = list.slice(1).find(x=> x.d!==ds && (x.rec.tasks&&x.rec.tasks[pid]||[]).some(t=>t.text==='세탁 완료' && t.done));
     return other ? other.d : null;
@@ -1781,9 +1788,9 @@ async function toggleWash(ds, id){
   else { delete t.by; delete t.at; }
   const raw = JSON.stringify(rec);
   if(ds === state.selectedDate){ state.todayRecord = JSON.parse(raw); lastTodayRaw = raw; }
-  try{ await window.storage.set('today:'+ds, raw, false); }catch(e){ alert('서버 저장에 실패했어. 인터넷 연결을 확인해줘.'); }
-  if(!cloud) state.monthRecords = readLocalMonth();
   render();
+  try{ await window.storage.set('today:'+ds, raw, false); }catch(e){ alert('서버 저장에 실패했어. 인터넷 연결을 확인해줘.'); }
+  if(!cloud){ state.monthRecords = readLocalMonth(); render(); }
 }
 function weekStartOf(ds){
   const [y,m,d] = ds.split('-').map(Number); const dt = new Date(y, m-1, d);
@@ -3793,8 +3800,8 @@ function attachHandlers(){
       t.done = !t.done;
       if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); }
       else { delete t.by; delete t.at; }
-      await saveTodayRecord();
       render();
+      await saveTodayRecord();
     };
   });
   document.querySelectorAll('[data-remove-task]').forEach(el=>{
