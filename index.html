@@ -2032,9 +2032,11 @@ function matchByUnitNumber(name){
   return c.length===1 ? c[0] : null;
 }
 function parseScheduleText(text, defYear){
-  const out = {}; let hdrName = '';
+  const out = {}; let hdrName = '', brand = '';
   String(text||'').split(/\r?\n/).forEach(line=>{
     // "***** 망원동 1층 스케쥴표 *****" 머리글 → 아래 "10/28(수) - 1층 (당일체크인 o)" 줄들의 숙소 이름
+    // "< 11월 스테이동교 청소 >" 같은 제목 → "스테이C"를 "동교스테이C"로
+    { const bm = !/^\s*\d/.test(line) ? line.match(/스테이\s*([가-힣]{1,4})/) : null; if(bm) brand = bm[1]+'스테이'; }
     const hm = line.match(/^[\s*★☆■▶\-=]*(.+?)\s*스케[줄쥴]\s*표[\s*★☆■▶\-=]*$/);
     if(hm){ hdrName = hm[1].replace(/[*★☆]/g,'').trim(); return; }
     const m = line.match(/^\s*(?:(\d{4})[-\/.])?(\d{1,2})\s*[\/\-.월]\s*(\d{1,2})\s*일?\s*(?:\([^)]*\))?\s*[:：]?\s*(.*)$/);
@@ -2047,12 +2049,13 @@ function parseScheduleText(text, defYear){
       (out[ds] = out[ds] || []).push({ raw: hdrName, today: yes, note: pending ? '당일 체크인 미정' : '' });
       return;
     }
-    m[4].split(/[,，]/).map(x=>x.trim()).filter(Boolean).forEach(it=>{
+    m[4].split(/[,，\/]/).map(x=>x.trim()).filter(Boolean).forEach(it=>{
       const parts = it.split('|');
       let raw = parts[0].trim().replace(/^[\-–•·*▶▷\s]+/, '');
       const today = /_?\s*당일|\(당일\)/.test(raw);
       raw = raw.replace(/_?\s*당일/g,'').replace(/\((?:수정|추가|변경|취소)\)/g,'').replace(/[_\s]+$/,'').trim();
       if(!raw) return;
+      if(brand && /^스테이\s*[A-Za-z]$/.test(raw)) raw = brand+raw.replace(/^스테이\s*/,'');
       (out[ds] = out[ds] || []).push({ raw, today, note: parts.slice(1).join('|').trim() });
     });
   });
