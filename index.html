@@ -1849,7 +1849,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const dt = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + i);
     const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
     const inMonth = dt.getMonth() === month, wd = dt.getDay(), hol = holidayName(ds);
-    const rec = inMonth ? state.monthRecords[ds] : null;
+    const rec = state.monthRecords[ds] || null;
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     const dots = chips.slice(0,6).map(c=>`<i></i>`).join('');
@@ -1911,7 +1911,7 @@ function renderCalendarTab(){
     const inMonth = dt.getMonth() === month;
     const wd = dt.getDay();
     const hol = holidayName(ds);
-    const rec = inMonth ? state.monthRecords[ds] : null;
+    const rec = state.monthRecords[ds] || null;
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${cls?'dow-'+cls:''} ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
