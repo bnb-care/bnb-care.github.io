@@ -1990,6 +1990,47 @@ async function removeJobFromToday(id){
   await saveTodayRecord();
   render();
 }
+// 호실별 표: "LG 729호" 머리글 + 줄마다 청소일·(체크인→체크아웃)·박수·인원·당일 O/X
+//  - 채팅 표 복사: "11/2 | 10/30 → 11/2 | 4박 | 2명 | X"
+//  - 엑셀 복사: "11월2일 10월30일 11월2일 4박 2명 X"
+//  - 문자: "508호 청소" 아래 "11/2) 4박3명 x" (모르면 ?)
+function parseUnitSchedule(text, defYear){
+  const out = {}; let hdr = '';
+  const clean = x=> String(x||'').replace(/[|*#`]/g,' ').replace(/\s+/g,' ').trim();
+  String(text||'').split(/\r?\n/).forEach(raw=>{
+    const line = clean(raw); if(!line) return;
+    let m = line.match(/^(\d{1,2})\s*월\s*(\d{1,2})\s*일\s+\d{1,2}\s*월\s*\d{1,2}\s*일\s+\d{1,2}\s*월\s*\d{1,2}\s*일\s+(.*)$/);   // 엑셀
+    let rest = '', mo = 0, dd = 0;
+    if(m){ mo = +m[1]; dd = +m[2]; rest = m[3]; }
+    else {
+      m = line.match(/^(\d{1,2})\s*\/\s*(\d{1,2})\s*\)?\s*(.*)$/);   // 11/2) … 또는 11/2 …
+      if(m && hdr){ mo = +m[1]; dd = +m[2]; rest = m[3]; }
+      else {
+        // 머리글: 호수가 들어 있고 날짜로 시작하지 않는 줄
+        if(!/^\d{1,2}\s*[\/월.]/.test(line) && /\d{3,4}\s*호/.test(line) && !/청소일|체크인\s*체크아웃/.test(line.replace(/\d{3,4}\s*호/,'')) ){
+          const hm = line.match(/^(.*?\d{3,4}\s*호)/); hdr = hm ? hm[1].replace(/\s*청소.*$/,'').trim() : line;
+        }
+        return;
+      }
+    }
+    const nights = (rest.match(/(\d+)\s*박/)||[])[1], guests = (rest.match(/(\d+)\s*명/)||[])[1];
+    const flag = (rest.match(/([OoXx○×ㅇ])\s*$/)||[])[1];
+    if(!flag && !nights && !guests && !/[?？미정]/.test(rest)) return;
+    const today = !!flag && /[Oo○ㅇ]/.test(flag);
+    const bits = []; if(nights) bits.push(nights+'박'); if(guests) bits.push(guests+'명');
+    const note = (nights||guests) ? bits.join(' · ') : '박수·인원 미정';
+    const ds = defYear+'-'+pad2(mo)+'-'+pad2(dd);
+    (out[ds] = out[ds] || []).push({ raw: hdr || '(숙소 이름 없음)', today, note });
+  });
+  return out;
+}
+// 호수만으로 숙소 찾기 ("LG 729호" → 이름에 729가 든 숙소가 하나뿐이면)
+function matchByUnitNumber(name){
+  const n = String(name||'').match(/(\d{3,4})\s*호/); if(!n) return null;
+  let c = state.properties.filter(p=> new RegExp('(^|\\D)'+n[1]+'(\\D|$)').test(p.name));
+  if(c.length>1){ const brand = /(LG|엘지|파라다이스)/i.test(name) ? c.filter(p=>/(LG|엘지|파라다이스)/i.test(p.name)) : c; if(brand.length) c = brand; }
+  return c.length===1 ? c[0] : null;
+}
 function parseScheduleText(text, defYear){
   const out = {}; let hdrName = '';
   String(text||'').split(/\r?\n/).forEach(line=>{
@@ -2126,6 +2167,7 @@ function openImportSheet(){
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
     document.getElementById('imp_next').onclick = ()=>{
       inText = document.getElementById('imp_text').value;
+      { const ud = parseUnitSchedule(inText, y); if(Object.keys(ud).length){ stepMap(ud); return; } }
       { // 스케줄표(주소 + "11.01 일 (당일) 1~6") · "10/23(금) 301호-수건12장" 형식은 붙여넣기 미리보기로 처리
         const se = parseCalMsg(inText).filter(e=>e.short);
         if(se.length){ root.remove(); openPastePreview([], se, inText, null); return; }
@@ -2206,7 +2248,7 @@ function openImportSheet(){
   const stepMap = (data)=>{
     const names = []; Object.values(data).forEach(arr=>arr.forEach(e=>{ if(!names.includes(e.raw)) names.push(e.raw); }));
     const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-    const guess = {}; names.forEach(n=>{ const m = findBestPropertyMatch(n); guess[n] = m ? m.id : ''; });
+    const guess = {}; names.forEach(n=>{ const m = findBestPropertyMatch(n) || matchByUnitNumber(n); guess[n] = m ? m.id : ''; });
     const unmatched = names.filter(n=>!guess[n]);
     const total = Object.values(data).reduce((a,b)=>a+b.length,0);
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
