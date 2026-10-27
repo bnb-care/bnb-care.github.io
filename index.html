@@ -477,7 +477,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1026-21';
+const APP_BUILD = '1027-18';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -2066,15 +2066,32 @@ function parseScheduleText(text, defYear){
 
 // "19(월)-2개(101호X,301호O)" 형식: 월/건물이름은 따로 받음. O=당일체크인, X=없음
 function isDayParenFormat(text){
-  return String(text||'').split(/\r?\n/).some(l=>/^\s*\d{1,2}\s*\(\s*[월화수목금토일]\s*\)\s*[-–:]/.test(l) && /\d{3,4}\s*호/.test(l));
+  return String(text||'').split(/\r?\n/).some(l=>/^\s*(?:\d{1,2}\s*\/\s*)?\d{1,2}\s*\(\s*[월화수목금토일]\s*\)\s*[-–:]/.test(l) && /\d{3,4}\s*호/.test(l));
 }
-function parseDayParen(text, year, month, prefix){
-  const out = {};
+// "28(수)-1개(301호X)" / "11/1(일)-3개(101호X,102호O,301호O)": 월이 없는 줄은 요일로 월을 알아냄 (O=당일체크인, X=아님)
+function parseDayParen(text, year, prefix){
+  const out = {}; const WD = '일월화수목금토';
+  const now = new Date(); const base = new Date(now.getFullYear(), now.getMonth(), now.getDate()-10);
+  let curM = null, lastD = 0, lastM = null;
   String(text||'').split(/\r?\n/).forEach(line=>{
-    const m = line.match(/^\s*(\d{1,2})\s*\(\s*[월화수목금토일]\s*\)\s*[-–:]\s*(.*)$/);
+    const m = line.match(/^\s*(?:(\d{1,2})\s*\/\s*)?(\d{1,2})\s*\(\s*([월화수목금토일])\s*\)\s*[-–:]\s*(.*)$/);
     if(!m) return;
-    const ds = year+'-'+pad2(month)+'-'+pad2(Number(m[1]));
-    const inside = (m[2].match(/\(([^)]*)\)/)||[])[1] || '';
+    const day = Number(m[2]); let mo, yy;
+    if(m[1]){ mo = Number(m[1]); yy = year; if(new Date(yy, mo-1, day) < new Date(base.getFullYear(), base.getMonth()-6, 1)) yy++; }
+    else {
+      // 요일이 맞는 가장 가까운 날짜 (오늘 10일 전부터 4달 안)
+      let found = null;
+      for(let k=0; k<5 && !found; k++){
+        const cand = new Date(base.getFullYear(), base.getMonth()+k, day);
+        if(cand.getDate()===day && WD[cand.getDay()]===m[3] && cand >= base) found = cand;
+      }
+      if(!found && lastM!==null){ const mm = day < lastD ? lastM+1 : lastM; found = new Date(year, mm-1, day); }
+      if(!found) return;
+      mo = found.getMonth()+1; yy = found.getFullYear();
+    }
+    lastM = mo; lastD = day;
+    const ds = yy+'-'+pad2(mo)+'-'+pad2(day);
+    const inside = (m[4].match(/\(([^)]*)\)/)||[])[1] || '';
     inside.split(/[,，]/).forEach(tok=>{
       const t = tok.match(/(\d{3,4})\s*호?\s*([OoXx○×])?/);
       if(!t) return;
@@ -2171,17 +2188,17 @@ function openImportSheet(){
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
     document.getElementById('imp_next').onclick = ()=>{
       inText = document.getElementById('imp_text').value;
-      { const ud = parseUnitSchedule(inText, y); if(Object.keys(ud).length){ stepMap(ud); return; } }
+      if(!isDayParenFormat(inText)){ const ud = parseUnitSchedule(inText, y); if(Object.keys(ud).length){ stepMap(ud); return; } }
       { // 스케줄표(주소 + "11.01 일 (당일) 1~6") · "10/23(금) 301호-수건12장" 형식은 붙여넣기 미리보기로 처리
         const se = parseCalMsg(inText).filter(e=>e.short);
         if(se.length){ root.remove(); openPastePreview([], se, inText, null); return; }
       }
       if(isKakaoFormat(inText)){ stepKakao(); return; }
       if(isDayParenFormat(inText)){
-        const mo = state.calMonth ? state.calMonth.month + 1 : new Date().getMonth()+1;
-        const mi = prompt('몇 월 일정이야? (숫자)', String(mo)); if(mi===null) return;
-        const pf = prompt('건물 이름 (예: 동교로). 호수 앞에 붙여서 숙소를 찾아', '동교로'); if(pf===null) return;
-        const d2 = parseDayParen(inText, y, Number(mi)||mo, pf.trim());
+        let lastPf = '동교로'; try{ lastPf = localStorage.getItem('pref:dayParenPrefix') || '동교로'; }catch(e){}
+        const pf = prompt('건물 이름 (예: 동교로). 호수 앞에 붙여서 숙소를 찾아', lastPf); if(pf===null) return;
+        try{ localStorage.setItem('pref:dayParenPrefix', pf.trim()); }catch(e){}
+        const d2 = parseDayParen(inText, y, pf.trim());
         if(!Object.keys(d2).length){ alert('호수를 못 찾았어.'); return; }
         stepMap(d2); return;
       }
