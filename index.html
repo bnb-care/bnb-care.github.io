@@ -477,7 +477,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1027-18';
+const APP_BUILD = '1027-21';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -632,7 +632,7 @@ let lastTodayRaw = null;
 // 비번이 '앞 손님 체크인 날짜'인 숙소(망원2룸): 바로 앞 일정 날짜를 찾아 MMDD* 로 제안
 const _prevDateCache = {};
 async function findPrevScheduleDate(pid, ds){
-  const key = pid+'@'+ds+'@'+(lastTodayRaw?lastTodayRaw.length:0);
+  const key = pid+'@'+ds;
   if(key in _prevDateCache) return _prevDateCache[key];
   const [y,m,d] = ds.split('-').map(Number);
   let found = null;
@@ -1783,10 +1783,15 @@ async function toggleWash(ds, id){
   const rec = state.monthRecords[ds]; if(!rec) return;
   ensureLaundryStep(rec, ds);
   const t = (rec.tasks[id]||[]).find(x=>x.text==='세탁 완료'); if(!t) return;
-  if(!t.done){ const bl = await washBlockedBy(ds, id); if(bl && !washBlockOk(id, bl)) return; }
+  const needCheck = !t.done;
   t.done = !t.done;
   if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); }
   else { delete t.by; delete t.at; }
+  if(needCheck){
+    render();
+    const bl = await washBlockedBy(ds, id);
+    if(bl && !washBlockOk(id, bl)){ t.done = false; delete t.by; delete t.at; render(); return; }
+  }
   const raw = JSON.stringify(rec);
   if(ds === state.selectedDate){ state.todayRecord = JSON.parse(raw); lastTodayRaw = raw; }
   render();
@@ -3859,11 +3864,22 @@ function attachHandlers(){
     el.onclick = async ()=>{
       const [id, idx] = el.dataset.task.split(':');
       const t = state.todayRecord.tasks[id][Number(idx)];
-      if(!t.done && t.text==='세탁 완료'){ const bl = await washBlockedBy(state.selectedDate, id); if(bl && !washBlockOk(id, bl)) return; }
+      const needCheck = !t.done && t.text==='세탁 완료';
+      // 누르자마자 화면부터 바꾸고, 세탁 세트 제한 확인은 뒤에서 (걸리면 되돌림)
       t.done = !t.done;
       if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); }
       else { delete t.by; delete t.at; }
       render();
+      if(needCheck){
+        const ds0 = state.selectedDate;
+        const bl = await washBlockedBy(ds0, id);
+        if(bl && !washBlockOk(id, bl)){
+          const cur = state.todayRecord && state.selectedDate===ds0 ? state.todayRecord.tasks[id] : null;
+          const tt = cur && cur[Number(idx)];
+          if(tt){ tt.done = false; delete tt.by; delete tt.at; }
+          render(); return;
+        }
+      }
       await saveTodayRecord();
     };
   });
