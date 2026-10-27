@@ -477,7 +477,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1027-21';
+const APP_BUILD = '1027-24';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1996,6 +1996,22 @@ async function removeJobFromToday(id){
   await saveTodayRecord();
   render();
 }
+// 붙여넣은 글에서 날짜로 시작하는데 결과에 반영되지 않은 줄 찾기 ("읽지 못한 줄" 경고용)
+function findUnreadLines(text, data){
+  const days = {}; // 일 → Set(월)
+  Object.keys(data||{}).forEach(ds=>{ const m = Number(ds.slice(5,7)), d = Number(ds.slice(8,10)); (days[d] = days[d] || new Set()).add(m); });
+  const out = [];
+  String(text||'').split(/\r?\n/).forEach(raw=>{
+    const line = raw.replace(/[|*#`]/g,' ').trim(); if(!line) return;
+    const m = line.match(/^(?:(\d{1,2})\s*[\/월.]\s*)?(\d{1,2})\s*(?:일|\(|\)|■|-|–|:|：|\s|$)/);
+    if(!m) return;
+    const mo = m[1] ? Number(m[1]) : 0, d = Number(m[2]);
+    if(d<1 || d>31 || (mo && (mo<1 || mo>12))) return;
+    const hit = days[d] && (!mo || days[d].has(mo));
+    if(!hit) out.push(line);
+  });
+  return out;
+}
 // 호실별 표: "LG 729호" 머리글 + 줄마다 청소일·(체크인→체크아웃)·박수·인원·당일 O/X
 //  - 채팅 표 복사: "11/2 | 10/30 → 11/2 | 4박 | 2명 | X"
 //  - 엑셀 복사: "11월2일 10월30일 11월2일 4박 2명 X"
@@ -2272,6 +2288,7 @@ function openImportSheet(){
     };
   };
   const stepMap = (data)=>{
+    const unread = findUnreadLines(inText, data);
     const names = []; Object.values(data).forEach(arr=>arr.forEach(e=>{ if(!names.includes(e.raw)) names.push(e.raw); }));
     const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
     const guess = {}; names.forEach(n=>{ const m = findBestPropertyMatch(n) || matchByUnitNumber(n); guess[n] = m ? m.id : ''; });
@@ -2279,6 +2296,7 @@ function openImportSheet(){
     const total = Object.values(data).reduce((a,b)=>a+b.length,0);
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
       <h2>이름 확인</h2>
+      ${unread.length?`<div style="margin-bottom:8px;padding:8px 10px;border:1px solid var(--clay);border-radius:10px;font-size:12px;color:var(--clay);"><b>⚠️ 읽지 못한 줄 ${unread.length}개</b> (등록되지 않아. 직접 확인해줘)${unread.slice(0,8).map(l=>`<div style="margin-top:3px;color:var(--ink);">· ${esc(l.length>60?l.slice(0,60)+'…':l)}</div>`).join('')}${unread.length>8?`<div>… 외 ${unread.length-8}개</div>`:''}</div>`:''}
       <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">${Object.keys(data).length}일 · ${total}건 · 숙소 이름 ${names.length}종류${unmatched.length?` · <b style="color:var(--clay)">못 찾은 ${unmatched.length}개</b>`:' · 모두 찾았어'}<br>못 찾은 이름은 숙소를 골라줘. <span style="color:#c27a00">추정</span>은 비슷한 이름으로 맞춘 거라 확인해줘. 건너뛰면 등록하지 않아.</div>
       ${names.map((n,i)=>`<div style="display:flex;gap:6px;align-items:center;margin:4px 0;font-size:13px;">
         <div style="flex:0 0 42%;${guess[n]?'':'color:var(--clay);font-weight:700;'}">${esc(n)}${(guess[n] && normalizeForMatch((propById(guess[n])||{}).name)!==normalizeForMatch(n))?' <span style="color:#c27a00;font-size:11px;">추정</span>':''}</div>
