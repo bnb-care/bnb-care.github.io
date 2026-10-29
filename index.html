@@ -478,7 +478,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1028-01';
+const APP_BUILD = '1029-13';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -506,10 +506,26 @@ window.storage = {
     }
     return localStore.get(key);
   },
-  async set(key, value, shared){
+  async set(key, value, shared, opts){
     if(isSharedKey(key)){
       if(!(cloud && cloud.user)) throw new Error('로그인 필요');
-      await cloud.fn.setDoc(kvDoc(key), { value, updatedAt: Date.now(), by: cloud.user.email });
+      const payload = { value, updatedAt: Date.now(), by: cloud.user.email };
+      if(key.startsWith('today:')){
+        let prev = null;
+        try{ const snap = await cloud.fn.getDoc(kvDoc(key)); if(snap.exists()) prev = snap.data(); }catch(e){}
+        if(prev){
+          if(opts && opts.base !== undefined && opts.base !== null && prev.value !== opts.base && prev.value !== value){
+            return { key, conflict:true, serverValue: prev.value, by: prev.by, at: prev.updatedAt };
+          }
+          let hist = Array.isArray(prev.hist) ? prev.hist.slice() : [];
+          if(prev.value && prev.value !== value){
+            hist.unshift({ value: prev.value, at: prev.updatedAt || 0, by: prev.by || '' });
+            hist = hist.slice(0, 10);
+          }
+          payload.hist = hist;
+        }
+      }
+      await cloud.fn.setDoc(kvDoc(key), payload);
       return { key, value };
     }
     return localStore.set(key, value);
@@ -521,6 +537,21 @@ window.storage = {
       return { key, deleted:true };
     }
     return localStore.delete(key);
+  },
+  async rawDoc(key){
+    if(!(CLOUD_ENABLED && cloud && cloud.user)) return null;
+    const snap = await cloud.fn.getDoc(kvDoc(key));
+    return snap.exists() ? snap.data() : null;
+  },
+  async allDays(){
+    const out = {};
+    if(CLOUD_ENABLED && cloud && cloud.user){
+      const q = cloud.fn.query(cloud.fn.collection(cloud.db,'kv'),
+        cloud.fn.where(cloud.fn.documentId(),'>=','today:'), cloud.fn.where(cloud.fn.documentId(),'<=','today:\uf8ff'));
+      const snap = await cloud.fn.getDocs(q);
+      snap.forEach(d=>{ const x=d.data(); out[d.id.replace('today:','')] = { value:x.value, by:x.by||'', at:x.updatedAt||0 }; });
+    }
+    return out;
   },
   // 오늘 이후 일정 기록을 한 번에(요청 1번) 가져옴: { 'YYYY-MM-DD': record }
   async recordsFrom(ds){
@@ -693,14 +724,17 @@ function ensureLaundryStep(rec, ds){
   return rec;
 }
 async function loadTodayRecord(){
+  const key0 = todayKey();
   try{
-    const res = await window.storage.get(todayKey(), false);
+    const res = await window.storage.get(key0, false);
+    if(key0 !== todayKey()) return; // 그 사이 다른 날짜로 넘어갔으면 이 결과는 버림
     lastTodayRaw = (res && res.value) ? res.value : null;
     if(res && res.value){
       const rec = JSON.parse(res.value);
       if(rec && rec.tasks){ state.todayRecord = ensureLaundryStep(rec); return; } // 예전 형식이면 새로 만들게 함
     }
   }catch(e){}
+  if(key0 !== todayKey()) return;
   state.todayRecord = null;
 }
 
@@ -1938,6 +1972,7 @@ function attachCalHandlers(){
   document.querySelectorAll('[data-wash]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const v = el.dataset.wash; const k = v.indexOf(':'); toggleWash(v.slice(0,k), v.slice(k+1)); });
   document.querySelectorAll('[data-cal-day]').forEach(el=> el.onclick = async ()=>{ state.tab = 'today'; await selectScheduleDate(el.dataset.calDay); window.scrollTo(0,0); });
   document.querySelectorAll('[data-cal-import]').forEach(b=> b.onclick = openImportSheet);
+  { const hb=document.getElementById('histBtn'); if(hb) hb.onclick=openHistorySheet; const bb=document.getElementById('backupBtn'); if(bb) bb.onclick=downloadBackup; }
   document.querySelectorAll('[data-cal-wk]').forEach(b=> b.onclick = ()=>{
     const v = b.dataset.calWk;
     if(v==='today'){ state.calWeekStart = weekStartOf(todayStr()); const d=new Date(); if(d.getMonth()!==state.calMonth.month||d.getFullYear()!==state.calMonth.year){ state.calMonth={year:d.getFullYear(),month:d.getMonth()}; watchMonth(); } render(); }
@@ -2932,9 +2967,64 @@ function triggerPhotoShare(propertyId){
   input.click();
 }
 async function saveTodayRecord(){
+  if(state.dayLoading || !state.todayRecord) return; // 날짜를 불러오는 중에는 저장하지 않음
   const raw = JSON.stringify(state.todayRecord);
+  const base = lastTodayRaw, key = todayKey();
   lastTodayRaw = raw;
-  try{ await window.storage.set(todayKey(), raw, false); }catch(e){ alert('서버 저장에 실패했어. 인터넷 연결을 확인해줘.'); }
+  try{
+    const res = await window.storage.set(key, raw, false, { base });
+    if(res && res.conflict){
+      const who = (res.by||'다른 사람').split('@')[0], t = res.at ? new Date(res.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      if(confirm('⚠️ 이 날짜 일정이 내가 불러온 뒤에 바뀌었어 ('+who+' '+t+').\n\n[확인] = 내 화면 내용으로 덮어쓰기 (기존 내용은 이전 버전에 남아)\n[취소] = 저장 안 하고 최신 내용 불러오기')){
+        await window.storage.set(key, raw, false);
+      } else {
+        if(key === todayKey()){ state.todayRecord = JSON.parse(res.serverValue); lastTodayRaw = res.serverValue; render(); }
+      }
+    }
+  }catch(e){ alert('서버 저장에 실패했어. 인터넷 연결을 확인해줘.'); }
+}
+
+function fmtWhen(t){ return t ? new Date(t).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '-'; }
+function histSummary(v){
+  try{ const r = JSON.parse(v); const n = (r.propertyIds||[]).length; return '숙소 '+n+'곳'; }catch(e){ return '?'; }
+}
+async function openHistorySheet(){
+  const ds = state.selectedDate, key = 'today:'+ds;
+  const root = document.createElement('div'); root.className='overlay';
+  root.innerHTML = '<div class="sheet"><h2>🕘 수정 기록</h2><div class="empty">불러오는 중…</div></div>';
+  document.body.appendChild(root);
+  root.addEventListener('click',e=>{ if(e.target===root) root.remove(); });
+  let doc=null;
+  try{ doc = await window.storage.rawDoc(key); }catch(e){}
+  if(!doc){ root.querySelector('.sheet').innerHTML='<h2>🕘 수정 기록</h2><div class="empty">기록을 불러오지 못했어.</div><div class="sheet-actions"><button class="cancel-btn" id="hx">닫기</button></div>'; root.querySelector('#hx').onclick=()=>root.remove(); return; }
+  const hist = Array.isArray(doc.hist) ? doc.hist : [];
+  const row = (label, v, by, at, idx)=> '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line,#eee);font-size:13px;"><div><b>'+label+'</b> · '+esc(histSummary(v))+'<br><span style="color:var(--ink-soft);font-size:12px;">'+esc((by||'').split('@')[0])+' · '+fmtWhen(at)+'</span></div>'+(idx>=0?'<button class="pill-btn" data-restore="'+idx+'">되돌리기</button>':'')+'</div>';
+  root.querySelector('.sheet').innerHTML = '<h2>🕘 '+esc(ds)+' 수정 기록</h2><div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">되돌려도 지금 내용은 기록에 남아. 최근 10번까지 보관돼.</div>'
+    + row('현재', doc.value, doc.by, doc.updatedAt, -1)
+    + (hist.length ? hist.map((h,i)=>row('이전 '+(i+1), h.value, h.by, h.at, i)).join('') : '<div class="empty" style="padding:12px 0;">이전 버전이 아직 없어.<br>(이 업데이트 이후 수정부터 쌓여)</div>')
+    + '<div class="sheet-actions"><button class="cancel-btn" id="hx">닫기</button></div>';
+  root.querySelector('#hx').onclick=()=>root.remove();
+  root.querySelectorAll('[data-restore]').forEach(b=> b.onclick = async ()=>{
+    const h = hist[+b.dataset.restore]; if(!h) return;
+    if(!confirm(fmtWhen(h.at)+' 버전으로 되돌릴까?')) return;
+    try{
+      const res = await window.storage.set(key, h.value, false);
+      if(ds === state.selectedDate){ state.todayRecord = JSON.parse(h.value); lastTodayRaw = h.value; }
+      root.remove(); render();
+    }catch(e){ alert('되돌리기에 실패했어.'); }
+  });
+}
+async function downloadBackup(){
+  try{
+    const all = await window.storage.allDays();
+    const n = Object.keys(all).length;
+    if(!n){ alert('백업할 일정이 없어.'); return; }
+    const blob = new Blob([JSON.stringify({ exportedAt:new Date().toISOString(), days: all }, null, 1)], { type:'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'bnbcare_일정백업_'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    alert('일정 '+n+'일치를 백업 파일로 저장했어.');
+  }catch(e){ alert('백업에 실패했어.'); }
 }
 
 // 영문 대문자(LG 등)가 한글보다 커 보이는 걸 막기 위해 영문만 살짝 줄임
@@ -3123,6 +3213,7 @@ function renderPickerBody(mode){
 }
 
 function renderToday(){
+  if(state.dayLoading) return renderScheduleCalendar() + '<div class="empty">일정 불러오는 중…</div>';
   if(state.editTodayOpen){
     return renderPickerBody('edit');
   }
@@ -3130,7 +3221,7 @@ function renderToday(){
     if(!isAdmin()) return renderScheduleCalendar() + `<div class="empty">${renderDateLabel()}<br>아직 등록된 일정이 없어.</div>`;
     return renderPickerBody('create');
   }
-  return renderScheduleCalendar() + renderScheduleCards();
+  return renderScheduleCalendar() + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button><button class="pill-btn" id="backupBtn">💾 백업 받기</button></div>' : '');
 }
 
 // 당일 체크인(🔴)은 항상 맨 위로 (그 안에서는 저장된 순서 유지)
@@ -3449,9 +3540,16 @@ async function selectScheduleDate(dateKey){
   state.pasteMatchOrder = [];
   state.calPasteText = '';
   state.calPasteResultMsg = '';
-  await loadTodayRecord();
-  if(cloud && cloud.user){ watchToday(); watchPhotos(); }
+  // 날짜를 바꾸는 동안 이전 날짜의 일정이 새 날짜로 저장되거나 보이지 않게: 먼저 구독을 끊고 비움
+  try{ if(unsubs.today){ unsubs.today(); unsubs.today = null; } }catch(e){}
+  state.todayRecord = null; lastTodayRaw = null; state.dayLoading = true;
   render();
+  await loadTodayRecord();
+  if(state.selectedDate === dateKey){
+    state.dayLoading = false;
+    if(cloud && cloud.user){ watchToday(); watchPhotos(); }
+    render();
+  }
 }
 
 
@@ -4545,7 +4643,9 @@ function watchKey(name, key, onData){
   }, ()=>{});
 }
 function watchToday(){
-  watchKey('today', todayKey(), v=>{
+  const k0 = todayKey();
+  watchKey('today', k0, v=>{
+    if(k0 !== todayKey() || state.dayLoading) return; // 다른 날짜로 넘어간 뒤 도착한 이전 날짜 변경은 무시
     if(v === lastTodayRaw) return;
     lastTodayRaw = v;
     let rec = null;
