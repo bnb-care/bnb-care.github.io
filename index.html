@@ -478,7 +478,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1029-13';
+const APP_BUILD = '1029-15';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1858,7 +1858,7 @@ function renderWeekView(){
       <div class="ttl">${a.getMonth()+1}/${a.getDate()} ~ ${b.getMonth()+1}/${b.getDate()}</div>
       <div class="navg"><button data-cal-wk="-1">◀</button><button data-cal-wk="today">이번 주</button><button data-cal-wk="1">▶</button></div>
       <div class="seg"><button data-cal-view="grid">월간</button><button data-cal-view="week" class="on">주간</button><button data-cal-view="list">목록</button></div>
-      ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}
+      ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}${isAdmin()&&CLOUD_ENABLED?'<button class="imp" data-cal-backup="1" title="전체 일정 백업" aria-label="전체 일정 백업">💾</button>':''}
     </div>`;
   const body = days.map(({dt,ds})=>{
     const rec = state.monthRecords[ds];
@@ -1923,7 +1923,7 @@ function renderCalendarTab(){
       <div class="ttl">${year}년 ${month+1}월</div>
       <div class="navg"><button data-cal-nav="-1">◀</button><button data-cal-today="1">오늘</button><button data-cal-nav="1">▶</button></div>
       <div class="seg"><button data-cal-view="grid" class="${state.calView==='grid'?'on':''}">월간</button><button data-cal-view="week" class="${state.calView==='week'?'on':''}">주간</button><button data-cal-view="list" class="${state.calView==='list'?'on':''}">목록</button></div>
-      ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}
+      ${isAdmin()?'<button class="imp" data-cal-import="1" title="일정 가져오기" aria-label="일정 가져오기">📥</button>':''}${isAdmin()&&CLOUD_ENABLED?'<button class="imp" data-cal-backup="1" title="전체 일정 백업" aria-label="전체 일정 백업">💾</button>':''}
     </div>
     <div style="font-size:12px;color:var(--ink-soft);margin:-4px 0 10px;">이 달 일정 ${mKeys.length}일 · 총 ${total}건 · 날짜를 누르면 그날 일정으로 이동</div>`;
   if(state.calView === 'list'){
@@ -1972,6 +1972,7 @@ function attachCalHandlers(){
   document.querySelectorAll('[data-wash]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const v = el.dataset.wash; const k = v.indexOf(':'); toggleWash(v.slice(0,k), v.slice(k+1)); });
   document.querySelectorAll('[data-cal-day]').forEach(el=> el.onclick = async ()=>{ state.tab = 'today'; await selectScheduleDate(el.dataset.calDay); window.scrollTo(0,0); });
   document.querySelectorAll('[data-cal-import]').forEach(b=> b.onclick = openImportSheet);
+  document.querySelectorAll('[data-cal-backup]').forEach(b=> b.onclick = downloadBackup);
   { const hb=document.getElementById('histBtn'); if(hb) hb.onclick=openHistorySheet; const bb=document.getElementById('backupBtn'); if(bb) bb.onclick=downloadBackup; }
   document.querySelectorAll('[data-cal-wk]').forEach(b=> b.onclick = ()=>{
     const v = b.dataset.calWk;
@@ -3221,7 +3222,7 @@ function renderToday(){
     if(!isAdmin()) return renderScheduleCalendar() + `<div class="empty">${renderDateLabel()}<br>아직 등록된 일정이 없어.</div>`;
     return renderPickerBody('create');
   }
-  return renderScheduleCalendar() + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button><button class="pill-btn" id="backupBtn">💾 백업 받기</button></div>' : '');
+  return renderScheduleCalendar() + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
 }
 
 // 당일 체크인(🔴)은 항상 맨 위로 (그 안에서는 저장된 순서 유지)
@@ -3360,7 +3361,7 @@ function renderScheduleCards(){
         ${state.todayRecord.excludedIds.map(e=>{
           const doneCount = (e.tasks||[]).filter(t=>t.done).length;
           const totalCount = (e.tasks||[]).length;
-          return `<div class="excluded-item"><span>${esc(e.name)}</span><span class="excluded-meta">${doneCount}/${totalCount} 상태로 제외</span></div>`;
+          return `<div class="excluded-item"><span>${esc(e.name)}</span><span class="excluded-meta">${doneCount}/${totalCount} 상태로 제외${isAdmin()?` <button class="excl-del" data-excl-del="${esc(e.id)}" aria-label="목록에서 지우기" style="border:0;background:none;font-size:15px;padding:2px 8px;color:var(--ink-soft);">✕</button>`:''}</span></div>`;
         }).join('')}
       </div>
     ` : ''}
@@ -3937,6 +3938,13 @@ function attachHandlers(){
   document.querySelectorAll('[data-remove-job]').forEach(el=>{ el.onclick = (ev)=>{ ev.stopPropagation(); removeJobFromToday(el.dataset.removeJob); }; });
   const confirmBtn = document.getElementById('confirmPick');
   if(confirmBtn) confirmBtn.onclick = createTodayList;
+  document.querySelectorAll('[data-excl-del]').forEach(b=> b.onclick = async ()=>{
+    const id = b.dataset.exclDel; const r = state.todayRecord; if(!r || !isAdmin()) return;
+    const it = (r.excludedIds||[]).find(x=>x.id===id); if(!it) return;
+    if(!confirm('"'+it.name+'"을(를) 제외 목록에서 지울까?\n(오늘 일정에는 영향 없어)')) return;
+    r.excludedIds = r.excludedIds.filter(x=>x.id!==id);
+    render(); await saveTodayRecord();
+  });
   const laundryReportBtn = document.getElementById('laundryReportBtn');
   if(laundryReportBtn) laundryReportBtn.onclick = triggerLaundryReport;
   const openEditTodayBtn = document.getElementById('openEditToday');
