@@ -478,7 +478,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1029-15';
+const APP_BUILD = '1030-1';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -2158,6 +2158,19 @@ function parseDayParen(text, year, prefix){
   });
   return out;
 }
+// "11/9 (월) 11/1-11/9" / "11/15 (일) 11/10-11/15   당일": 맨 앞 날짜=퇴실(청소)일, 뒤는 투숙기간, 당일=같은 날 체크인
+const CHECKOUT_LINE = /^\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\(\s*[월화수목금토일]\s*\)\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*[-~∼～–]\s*(\d{1,2})\s*\/\s*(\d{1,2})(.*)$/;
+function isCheckoutList(text){ return String(text||'').split(/\r?\n/).some(l=>CHECKOUT_LINE.test(l)); }
+function parseCheckoutList(text, defYear){
+  const out = []; const seen = new Set(); const nowM = new Date().getMonth()+1;
+  String(text||'').split(/\r?\n/).forEach(line=>{
+    const m = line.match(CHECKOUT_LINE); if(!m) return;
+    const mo = Number(m[1]), d = Number(m[2]); let yy = defYear; if(mo < nowM - 6) yy = defYear + 1;
+    const ds = yy+'-'+pad2(mo)+'-'+pad2(d); if(seen.has(ds)) return; seen.add(ds);
+    out.push({ ds, gap:'', guests:0, today: /당일|[■□◼◻▪]/.test(m[7]||'') });
+  });
+  return out;
+}
 function parseKakaoSchedule(text, defYear){
   const out = []; const seen = new Set();
   const nowM = new Date().getMonth()+1;
@@ -2251,7 +2264,7 @@ function openImportSheet(){
         const se = parseCalMsg(inText).filter(e=>e.short);
         if(se.length){ root.remove(); openPastePreview([], se, inText, null); return; }
       }
-      if(isKakaoFormat(inText)){ stepKakao(); return; }
+      if(isKakaoFormat(inText) || isCheckoutList(inText)){ stepKakao(); return; }
       if(isDayParenFormat(inText)){
         let lastPf = '동교로'; try{ lastPf = localStorage.getItem('pref:dayParenPrefix') || '동교로'; }catch(e){}
         const pf = prompt('건물 이름 (예: 동교로). 호수 앞에 붙여서 숙소를 찾아', lastPf); if(pf===null) return;
@@ -2268,7 +2281,7 @@ function openImportSheet(){
 
   const stepKakao = ()=>{
     const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-    const rows0 = parseKakaoSchedule(inText, y);
+    const rows0 = isCheckoutList(inText) ? parseCheckoutList(inText, y) : parseKakaoSchedule(inText, y);
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
       <h2>💬 대표 카톡 일정표</h2>
       <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">날짜 ${rows0.length}개를 찾았어. 이 일정표가 어느 숙소(카톡방) 건지 골라줘.<br>날짜 줄만 읽고, 주소·비밀번호 같은 내용은 읽지도 저장하지도 않아.</div>
