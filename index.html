@@ -478,7 +478,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1030-1';
+const APP_BUILD = '1031-1';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -2158,6 +2158,40 @@ function parseDayParen(text, year, prefix){
   });
   return out;
 }
+// "🔑 1208호 🔑 PW…" 블록 + "11월 6일(6박) 게스트 3명 [작은수건] 18 [큰 수건] 3" / "11월 12일 - 당일예약 x":
+// (N박)=체크인 날짜. 청소일=퇴실일. 퇴실일에 새 체크인이 있으면 당일(🔴), "당일예약 x" 줄은 당일 아님
+function isTowelSchedule(text){ const t=String(text||''); return /🔑/.test(t) && /(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*\(\s*\d+\s*박/.test(t); }
+function parseTowelSchedule(text, defYear){
+  const out = {}; const nowM = new Date().getMonth()+1;
+  const mkDs = (mo,d)=>{ let yy = defYear; if(mo < nowM - 6) yy++; return yy+'-'+pad2(mo)+'-'+pad2(d); };
+  const addDays = (ds,n)=>{ const [y,m,d]=ds.split('-').map(Number); const t=new Date(y,m-1,d+n); return t.getFullYear()+'-'+pad2(t.getMonth()+1)+'-'+pad2(t.getDate()); };
+  let name = null, cur = null; const blocks = [];
+  String(text||'').split(/\r?\n/).forEach(line=>{
+    const h = line.match(/🔑\s*(.*?)\s*🔑/);
+    if(h){ name = h[1].trim(); cur = { name, stays:[], xs:[] }; blocks.push(cur); return; }
+    if(!cur) return;
+    let m = line.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*\(\s*(\d+)\s*박/);
+    if(m){ cur.last = { ds: mkDs(+m[1],+m[2]), nights:+m[3], guests:0, sm:0, lg:0 }; cur.stays.push(cur.last); return; }
+    m = line.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*[-–]\s*당일\s*예약\s*[xX×]/);
+    if(m){ cur.xs.push(mkDs(+m[1],+m[2])); cur.last = null; return; }
+    if(!cur.last) return;
+    m = line.match(/게스트\s*(\d+)\s*명/); if(m) cur.last.guests = +m[1];
+    m = line.match(/작은\s*수건\]?\s*(\d+)/); if(m) cur.last.sm = +m[1];
+    m = line.match(/큰\s*수건\]?\s*(\d+)/); if(m) cur.last.lg = +m[1];
+  });
+  blocks.forEach(bk=>{
+    const checkin = {}; bk.stays.forEach(st=>{ checkin[st.ds] = st; });
+    const days = new Set(bk.xs);
+    bk.stays.forEach(st=>{ days.add(addDays(st.ds, st.nights)); });
+    days.forEach(ds=>{
+      const nxt = checkin[ds];
+      let note = '';
+      if(nxt){ note = '수건 작은 '+nxt.sm+(nxt.lg?' · 큰 '+nxt.lg:'')+' ('+nxt.guests+'명)'; }
+      (out[ds] = out[ds] || []).push({ raw: bk.name.replace(/호$/,'').trim(), today: !!nxt, note });
+    });
+  });
+  return out;
+}
 // "11/9 (월) 11/1-11/9" / "11/15 (일) 11/10-11/15   당일": 맨 앞 날짜=퇴실(청소)일, 뒤는 투숙기간, 당일=같은 날 체크인
 const CHECKOUT_LINE = /^\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\(\s*[월화수목금토일]\s*\)\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*[-~∼～–]\s*(\d{1,2})\s*\/\s*(\d{1,2})(.*)$/;
 function isCheckoutList(text){ return String(text||'').split(/\r?\n/).some(l=>CHECKOUT_LINE.test(l)); }
@@ -2259,6 +2293,7 @@ function openImportSheet(){
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
     document.getElementById('imp_next').onclick = ()=>{
       inText = document.getElementById('imp_text').value;
+      if(isTowelSchedule(inText)){ const td = parseTowelSchedule(inText, y); if(Object.keys(td).length){ stepMap(td); return; } }
       if(!isDayParenFormat(inText)){ const ud = parseUnitSchedule(inText, y); if(Object.keys(ud).length){ stepMap(ud); return; } }
       { // 스케줄표(주소 + "11.01 일 (당일) 1~6") · "10/23(금) 301호-수건12장" 형식은 붙여넣기 미리보기로 처리
         const se = parseCalMsg(inText).filter(e=>e.short);
@@ -2338,7 +2373,8 @@ function openImportSheet(){
     };
   };
   const stepMap = (data)=>{
-    const unread = findUnreadLines(inText, data);
+    const towel = isTowelSchedule(inText);
+    const unread = towel ? [] : findUnreadLines(inText, data);
     const names = []; Object.values(data).forEach(arr=>arr.forEach(e=>{ if(!names.includes(e.raw)) names.push(e.raw); }));
     const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
     const guess = {}; names.forEach(n=>{ const m = findBestPropertyMatch(n) || matchByUnitNumber(n); guess[n] = m ? m.id : ''; });
