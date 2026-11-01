@@ -195,6 +195,7 @@
   .cc-cell:not(.today) .n.red{background:#F8E4E1;} .cc-cell:not(.today) .n.blue{background:#E3ECF6;}
   .cal-day.dow-red{background:#FBEDEB;} .cal-day.dow-blue{background:#EAF0F8;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
+  .cal-cell .dn .off{flex:1;min-width:0;margin:0 4px;font-size:9px;font-weight:600;color:#8a6d1f;background:#FBF1D6;border-radius:4px;padding:0 3px;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
   .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:var(--surface);box-shadow:inset 0 0 0 1px #D9D6CA;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cchip.pri{font-weight:700;color:#B3321A;}
@@ -478,7 +479,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1101-1';
+const APP_BUILD = '1101-6';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -753,8 +754,12 @@ function selectedWeekday(){
   const [y,m,d] = state.selectedDate.split('-').map(Number);
   return new Date(y,m-1,d).getDay();
 }
-function offLabel(st){ return st.onRequest ? '연락 시' : '불가'; }
+function offLabel(st){ return staffOffToday(st) ? '휴무' : (st.onRequest ? '연락 시' : '불가'); }
+function offNamesOn(ds){ return activeStaff().filter(st=>(st.offDates||[]).includes(ds)).map(st=>{ const n=st.name||''; return /^[가-힣]{3}$/.test(n) ? n.slice(1) : n; }); }
+function offNamesHtml(ds){ const a = offNamesOn(ds); return a.length ? `<span class="off" title="휴무: ${esc(a.join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; }
+function staffOffToday(st){ return (st.offDates||[]).includes(state.selectedDate); }
 function staffUnavailable(st){
+  if(staffOffToday(st)) return true; // 휴무일
   if(st.onRequest) return true; // 요일 미정: 연락 온 날만 배정
   const wd = selectedWeekday();
   const days = (st.days && st.days.length) ? st.days : [0,1,2,3,4,5,6];
@@ -821,6 +826,7 @@ function openAssignSheet(){
 }
 function openStaffEditSheet(st){
   const cur = st || { id:'st_'+Date.now(), name:'', phone:'', days:[0,1,2,3,4,5,6], endTime:'', forbidden:[], onRequest:false };
+  let offs = (cur.offDates||[]).slice();
   const root = document.createElement('div');
   root.className='overlay'; root.id='overlay2';
   root.innerHTML = `
@@ -834,7 +840,14 @@ function openStaffEditSheet(st){
         </div></div>
       <div class="field"><label>근무 종료 제한 (예: 15:30, 없으면 비움)</label><input id="sf_end" value="${esc(cur.endTime||'')}"></div>
       <div class="field"><label>배정 금지 숙소 키워드 (쉼표로 구분)</label><input id="sf_forbid" value="${esc((cur.forbidden||[]).join(','))}"></div>
+      <div class="field"><label>휴무일 (날짜를 골라 추가)</label>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <input type="date" id="sf_off1" style="flex:1;min-width:120px;"><span>~</span><input type="date" id="sf_off2" style="flex:1;min-width:120px;" title="하루만이면 비워둬">
+          <button class="pill-btn" id="sf_offadd" type="button">추가</button>
+        </div>
+        <div id="sf_offlist" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div></div>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:6px 0;"><input type="checkbox" id="sf_req" ${cur.onRequest?'checked':''}>요일 미정: 연락 온 날만 배정 (평소엔 불가로 처리)</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:6px 0;"><input type="checkbox" id="sf_mgr" ${cur.role==='manager'?'checked':''}>관리직 (직원 탭에서 따로 묶어서 보여줘 · 일정 없음 알림 제외)</label>
       <div class="sheet-actions">
         <button class="cancel-btn" id="sf_cancel">취소</button>
         <button class="save-btn" id="sf_save">저장</button>
@@ -842,15 +855,35 @@ function openStaffEditSheet(st){
       ${st&&!st.inactive?`<button id="sf_pause" style="background:none;border:none;color:var(--ink-soft);font-size:12px;margin-top:10px;margin-right:14px;cursor:pointer;">퇴사/중단 (보관)</button>`:''}${st?`<button id="sf_del" style="background:none;border:none;color:var(--clay);font-size:12px;margin-top:10px;cursor:pointer;">직원 삭제</button>`:''}
     </div>`;
   document.body.appendChild(root);
+  const fmtOff = ds=>{ const [y,m,d]=ds.split('-').map(Number); return m+'/'+d+'('+'일월화수목금토'[new Date(y,m-1,d).getDay()]+')'; };
+  const drawOffs = ()=>{
+    offs = Array.from(new Set(offs)).sort();
+    const today = todayStr();
+    document.getElementById('sf_offlist').innerHTML = offs.filter(d=>d>=today).length || offs.length ? offs.map(d=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;border:1px solid var(--paper-line);font-size:13px;${d<today?'opacity:.5;':''}">${fmtOff(d)}<button type="button" data-off-del="${d}" style="border:0;background:none;font-size:14px;padding:0 2px;color:var(--ink-soft);">✕</button></span>`).join('') : '<span style="font-size:12px;color:var(--ink-soft);">등록된 휴무일 없음</span>';
+    document.getElementById('sf_offlist').querySelectorAll('[data-off-del]').forEach(b=> b.onclick = ()=>{ offs = offs.filter(x=>x!==b.dataset.offDel); drawOffs(); });
+  };
+  drawOffs();
+  document.getElementById('sf_offadd').onclick = ()=>{
+    const a = document.getElementById('sf_off1').value, b2 = document.getElementById('sf_off2').value || a;
+    if(!a){ alert('날짜를 골라줘.'); return; }
+    if(b2 < a){ alert('끝 날짜가 시작보다 빨라.'); return; }
+    const [y1,m1,d1] = a.split('-').map(Number), [y2,m2,d2] = b2.split('-').map(Number);
+    let n = 0;
+    for(let t=new Date(y1,m1-1,d1), e=new Date(y2,m2-1,d2); t<=e && n<62; t.setDate(t.getDate()+1), n++){
+      offs.push(t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'));
+    }
+    document.getElementById('sf_off1').value = ''; document.getElementById('sf_off2').value = '';
+    drawOffs();
+  };
   document.getElementById('sf_cancel').onclick = ()=> root.remove();
   document.getElementById('sf_save').onclick = async ()=>{
     const name = document.getElementById('sf_name').value.trim();
     if(!name){ alert('이름을 입력해줘.'); return; }
     const days = Array.from(root.querySelectorAll('.sf_day')).filter(c=>c.checked).map(c=>Number(c.value));
-    const obj = { id:cur.id, inactive:!!cur.inactive, name, phone:document.getElementById('sf_phone').value.trim(), days,
+    const obj = { id:cur.id, inactive:!!cur.inactive, role:(document.getElementById('sf_mgr').checked?'manager':''), name, phone:document.getElementById('sf_phone').value.trim(), days,
       endTime:document.getElementById('sf_end').value.trim(),
       forbidden:document.getElementById('sf_forbid').value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),
-      onRequest:document.getElementById('sf_req').checked };
+      onRequest:document.getElementById('sf_req').checked, offDates: offs };
     const i = state.staff.findIndex(x=>x.id===cur.id);
     if(i>=0) state.staff[i]=obj; else state.staff.push(obj);
     await saveStaff();
@@ -1353,10 +1386,29 @@ function openSendSheet(){
       <div style="flex:1;min-width:0;"><b>${esc(st.name)}</b> <span style="font-size:13px;color:var(--ink-soft);">${n}건</span><div>${badge}</div></div>
       <button class="pill-btn" data-send-to="${st.id}">✉️ 보내기</button></div>`;
   }).filter(Boolean).join('');
+  const idle = activeStaff().filter(st=>st.role!=='manager' && !staffUnavailable(st) && !staffAssignedProps(st.id).length);
+  let idleTpl = '{이름}님, {날짜} 청소 일정 없습니다. 감사합니다 :)';
+  try{ idleTpl = localStorage.getItem('pref:idleMsg') || idleTpl; }catch(e){}
+  const dateWord = ()=>{
+    const [yy,mm,dd] = state.selectedDate.split('-').map(Number); const d = new Date(yy,mm-1,dd);
+    const tm = new Date(); tm.setDate(tm.getDate()+1);
+    const tag = mm+'/'+dd+' '+'일월화수목금토'[d.getDay()];
+    return (d.getFullYear()===tm.getFullYear() && d.getMonth()===tm.getMonth() && d.getDate()===tm.getDate()) ? '내일('+tag+')' : tag;
+  };
+  const idleHtml = idle.length ? `<div style="margin:14px 0 8px;padding-top:10px;border-top:1px solid var(--paper-line);">
+      <div style="font-weight:700;font-size:14px;">🌙 일정 없는 직원 (${idle.length}명)</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px;">${esc(dateWord())} 배정이 없는 직원에게 "일정 없음"을 알려. 문구는 고칠 수 있어. {이름} {날짜}는 자동으로 바뀌어.</div>
+      <input id="idle_tpl" type="text" value="${esc(idleTpl)}" style="width:100%;margin-bottom:6px;padding:8px;border:1px solid var(--line,#ddd);border-radius:8px;font-size:13px;box-sizing:border-box;">
+      ${idle.map(st=>`<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--paper-line);">
+        <div style="flex:1;min-width:0;"><b>${esc(st.name)}</b><div>${sentBadge(st.id) || '<span style="font-size:12px;color:var(--ink-soft);">아직 안 보냄</span>'}</div></div>
+        ${st.phone?`<button class="pill-btn" data-idle-sms="${st.id}">문자</button>`:''}
+        <button class="pill-btn" data-idle-share="${st.id}">공유</button></div>`).join('')}
+    </div>` : '';
   const root = document.createElement('div');
   root.className='overlay'; root.id='overlay';
-  root.innerHTML = `<div class="sheet"><h2>✉️ 직원 보내기</h2>
+  root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>✉️ 직원 보내기</h2>
     <div style="margin-bottom:8px;">${rows || '<div style="font-size:13px;color:var(--ink-soft);">보낼 일정이 없어.</div>'}</div>
+    ${idleHtml}
     <button class="pill-btn" id="openPaste" style="width:100%;margin-bottom:8px;">📥 메시지 붙여넣기 (배정 문서 · 수건·인원)</button>
     <div class="sheet-actions"><button class="cancel-btn" id="closeSend">닫기</button></div></div>`;
   document.body.appendChild(root);
@@ -1364,6 +1416,9 @@ function openSendSheet(){
   document.getElementById('openPaste').onclick = ()=>{ root.remove(); openPasteSheet(); };
   root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
   root.querySelectorAll('[data-send-to]').forEach(b=> b.onclick = ()=>{ const id=b.dataset.sendTo; root.remove(); openPersonalSheet(id); });
+  const idleText = (st)=>{ const t = (document.getElementById('idle_tpl').value || idleTpl); try{ localStorage.setItem('pref:idleMsg', t); }catch(e){} return t.replace(/\{이름\}/g, st.name).replace(/\{날짜\}/g, dateWord()); };
+  root.querySelectorAll('[data-idle-sms]').forEach(b=> b.onclick = ()=>{ const st = staffById(b.dataset.idleSms); if(!st) return; const body = idleText(st); markSent(st.id); render(); location.href = smsHref(st.phone, body); });
+  root.querySelectorAll('[data-idle-share]').forEach(b=> b.onclick = async ()=>{ const st = staffById(b.dataset.idleShare); if(!st) return; const done = await shareOrCopy(idleText(st)); if(done){ markSent(st.id); root.remove(); render(); openSendSheet(); } });
 }
 function renderSendStrip(){
   if(!isAdmin() || !state.staff.length || !state.todayRecord) return '';
@@ -1522,7 +1577,7 @@ function renderStaffTab(){
       <div style="padding:8px 12px;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden;white-space:nowrap;"><span class="sname" style="font-weight:700;font-size:15px;flex-shrink:0;">${esc(st.name)}${staffUnavailable(st)?' <span style="color:var(--clay);font-size:11px;">오늘 '+offLabel(st)+'</span>':''}</span>
-          <span style="font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;min-width:0;">${dtxt}${st.endTime?' · ~'+esc(st.endTime):''}${(st.forbidden||[]).length?' · 금지:'+esc(st.forbidden.join(',')):''}${st.onRequest?' · 연락대기':''}</span></div>
+          <span style="font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;min-width:0;">${dtxt}${(()=>{ const t=todayStr(); const u=(st.offDates||[]).filter(d=>d>=t).slice(0,3).map(d=>+d.slice(5,7)+'/'+ +d.slice(8)); return u.length?' · 휴무 '+u.join(','):''; })()}${st.endTime?' · ~'+esc(st.endTime):''}${(st.forbidden||[]).length?' · 금지:'+esc(st.forbidden.join(',')):''}${st.onRequest?' · 연락대기':''}</span></div>
           ${st.phone?`<a href="tel:${esc(st.phone)}" style="font-size:18px;text-decoration:none;">📞</a>`:''}
           <button class="pill-btn" data-staff-edit="${st.id}">수정</button>
         </div>
@@ -1551,7 +1606,7 @@ function renderStaffTab(){
   return `
     ${renderScheduleCalendar()}
     ${attend}
-    ${state.staff.length ? avail.map(card).join('') + (unavail.length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.map(card).join(''):'') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
+    ${state.staff.length ? avail.filter(st=>st.role!=='manager').map(card).join('') + (unavail.filter(st=>st.role!=='manager').length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.filter(st=>st.role!=='manager').map(card).join(''):'') + (activeStaff().some(st=>st.role==='manager') ? `<div style="font-size:12px;color:var(--ink-soft);margin:14px 0 6px;font-weight:700;">관리직</div>`+activeStaff().filter(st=>st.role==='manager').map(card).join('') : '') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
     ${state.staff.some(st=>st.inactive) ? `<div style="margin-top:12px;">
       <button class="relist-btn" id="toggleInactiveStaff">⏸ 중단된 직원 (${state.staff.filter(st=>st.inactive).length}명) ${state.inactiveStaffOpen ? '▲' : '▼'}</button>
       ${state.inactiveStaffOpen ? state.staff.filter(st=>st.inactive).map(st=>`<div class="prop-card" style="opacity:.75;margin-top:8px;"><div class="prop-top" style="cursor:default;"><div><div class="prop-name">${esc(st.name)}</div></div>${isAdmin()?`<button class="pill-btn" data-staff-resume="${st.id}">다시 사용</button>`:''}</div></div>`).join('') : ''}
@@ -1969,7 +2024,7 @@ function renderCalendarTab(){
     const chips = rec ? chipsFor(rec) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${cls?'dow-'+cls:''} ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
-      <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
+      <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${offNamesHtml(ds)}${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
       ${chips.map(c=>`<span class="cchip fx ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}" title="${esc(c.name)}"><span class="nmw"><span class="sn">${esc(shortName(c.name))}</span><span class="fn">${esc(c.name)}</span></span>${c.wash?'<span class="wm">🧺</span>':''}</span>`).join('')}
     </div>`;
   }
@@ -3286,7 +3341,7 @@ function renderToday(){
   }
   if(!state.todayRecord){
     if(!isAdmin()) return renderScheduleCalendar() + `<div class="empty">${renderDateLabel()}<br>아직 등록된 일정이 없어.</div>`;
-    return renderPickerBody('create');
+    return (activeStaff().length ? '<button class="pill-btn" id="openSend" style="width:100%;margin-bottom:10px;">🌙 직원에게 일정 없음 알리기</button>' : '') + renderPickerBody('create');
   }
   return renderScheduleCalendar() + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
 }
