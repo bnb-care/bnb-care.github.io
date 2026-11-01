@@ -481,7 +481,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-2';
+const APP_BUILD = '1102-3';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1977,7 +1977,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     : '<div class="wk-empty">일정 없음</div>';
   const pastCls = pick < todayStr() ? 'past' : '';
   return head + `<div class="mc-grid">${cells}</div>
-    <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${chips.length?`<button data-cal-day="${pick}" title="자세히" aria-label="자세히">🔍</button>`:''}${isAdmin()?`<button data-cal-add="${pick}" title="일정 추가" aria-label="일정 추가">➕</button>`:''}</div>${offLineHtml(pick)}${list}</div>`;
+    <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${offNamesOn(pick).length?`<span class="count-off" style="margin-left:6px;" title="휴무: ${esc(offFullNames(pick).join(', '))}">휴 ${esc(offNamesOn(pick).join('·'))}</span>`:''}${chips.length?`<button data-cal-day="${pick}" title="자세히" aria-label="자세히">🔍</button>`:''}${isAdmin()?`<button data-cal-add="${pick}" title="일정 추가" aria-label="일정 추가">➕</button>`:''}</div>${list}</div>`;
 }
 function renderCalendarTab(){
   if(!cloud) state.monthRecords = readLocalMonth();
@@ -3604,10 +3604,10 @@ function renderScheduleCalendar(){
       <div class="schedule-cal-bar">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
           <button class="dnav" data-day-nav="-1" aria-label="전날">◀</button>
-          <div style="white-space:nowrap;">${isTodaySelected ? '오늘 · ' : ''}<b>${dateLabel}</b>${(()=>{ const a = offNamesOn(state.selectedDate); return a.length ? ` <span class="count-off" title="휴무: ${esc(offFullNames(state.selectedDate).join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; })()}</div>
+          <div style="white-space:nowrap;">${isTodaySelected ? '오늘 · ' : ''}<b>${dateLabel}</b></div>
           <button class="dnav" data-day-nav="1" aria-label="다음날">▶</button>
         </div>
-        <button id="toggleScheduleCal">달력 ▾</button>
+        <div style="display:flex;align-items:center;gap:6px;">${(()=>{ const a = offNamesOn(state.selectedDate); return a.length ? `<span class="count-off" title="휴무: ${esc(offFullNames(state.selectedDate).join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; })()}<button id="toggleScheduleCal">달력 ▾</button></div>
       </div>
     `;
   }
