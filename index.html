@@ -478,7 +478,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1031-2';
+const APP_BUILD = '1101-1';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -796,7 +796,7 @@ function openAssignSheet(){
   const counts = {};
   r.propertyIds.forEach(id=>{ const sid=(r.assign||{})[id]; if(sid) counts[sid]=(counts[sid]||0)+1; });
   const unassigned = r.propertyIds.filter(id=>!(r.assign||{})[id]).length;
-  const summary = state.staff.map(st=>`<div style="font-size:13px;padding:2px 0;">${esc(st.name)} · ${counts[st.id]||0}곳${staffUnavailable(st)?' <span style="color:var(--clay)">(오늘 ${offLabel(st)})</span>':''}</div>`).join('');
+  const summary = activeStaff().map(st=>`<div style="font-size:13px;padding:2px 0;">${esc(st.name)} · ${counts[st.id]||0}곳${staffUnavailable(st)?' <span style="color:var(--clay)">(오늘 ${offLabel(st)})</span>':''}</div>`).join('');
   const root = document.createElement('div');
   root.className='overlay'; root.id='overlay';
   root.innerHTML = `
@@ -839,7 +839,7 @@ function openStaffEditSheet(st){
         <button class="cancel-btn" id="sf_cancel">취소</button>
         <button class="save-btn" id="sf_save">저장</button>
       </div>
-      ${st?`<button id="sf_del" style="background:none;border:none;color:var(--clay);font-size:12px;margin-top:10px;cursor:pointer;">직원 삭제</button>`:''}
+      ${st&&!st.inactive?`<button id="sf_pause" style="background:none;border:none;color:var(--ink-soft);font-size:12px;margin-top:10px;margin-right:14px;cursor:pointer;">퇴사/중단 (보관)</button>`:''}${st?`<button id="sf_del" style="background:none;border:none;color:var(--clay);font-size:12px;margin-top:10px;cursor:pointer;">직원 삭제</button>`:''}
     </div>`;
   document.body.appendChild(root);
   document.getElementById('sf_cancel').onclick = ()=> root.remove();
@@ -847,7 +847,7 @@ function openStaffEditSheet(st){
     const name = document.getElementById('sf_name').value.trim();
     if(!name){ alert('이름을 입력해줘.'); return; }
     const days = Array.from(root.querySelectorAll('.sf_day')).filter(c=>c.checked).map(c=>Number(c.value));
-    const obj = { id:cur.id, name, phone:document.getElementById('sf_phone').value.trim(), days,
+    const obj = { id:cur.id, inactive:!!cur.inactive, name, phone:document.getElementById('sf_phone').value.trim(), days,
       endTime:document.getElementById('sf_end').value.trim(),
       forbidden:document.getElementById('sf_forbid').value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),
       onRequest:document.getElementById('sf_req').checked };
@@ -857,6 +857,13 @@ function openStaffEditSheet(st){
     root.remove();
     const o=document.getElementById('overlay'); if(o) o.remove();
     render();
+  };
+  const pauseB = document.getElementById('sf_pause');
+  if(pauseB) pauseB.onclick = async ()=>{
+    if(!confirm(cur.name+' 직원을 중단(보관)할까?\n목록에서 접히고 배정·공지 목록에서 빠져. 정보와 지난 기록은 그대로 남아. 언제든 다시 사용할 수 있어.')) return;
+    const i = state.staff.findIndex(x=>x.id===cur.id);
+    if(i>=0) state.staff[i] = { ...state.staff[i], inactive:true };
+    await saveStaff(); root.remove(); const o=document.getElementById('overlay'); if(o) o.remove(); render();
   };
   const del = document.getElementById('sf_del');
   if(del) del.onclick = async ()=>{
@@ -912,7 +919,7 @@ function sentBadge(stId){
 // ===== 배정 문서 붙여넣기: "조아라님 / 1.숙소 / 비번*" 형식을 읽어 작업자·순서·비번에 반영 =====
 function parseAssignDoc(text){
   const groups = []; let cur = null;
-  const staffByName = n=>{ n=String(n).replace(/님$/,'').trim(); return state.staff.find(st=>st.name===n) || state.staff.find(st=>st.name.includes(n) || n.includes(st.name)) || null; };
+  const staffByName = n=>{ n=String(n).replace(/님$/,'').trim(); return activeStaff().find(st=>st.name===n) || activeStaff().find(st=>st.name.includes(n) || n.includes(st.name)) || null; };
   String(text||'').split(/\r?\n/).forEach(raw=>{
     const line = raw.trim(); if(!line) return;
     const head = line.match(/^([가-힣]{2,4})\s*님\s*$/);
@@ -944,7 +951,7 @@ function parseAssignDoc(text){
     if(!prop) prop = findBestPropertyMatch(nameRaw);
     if(!prop){
       const k = normalizeForMatch(nameRaw).replace(/동/g,'');
-      const hits = state.properties.filter(p=>normalizeForMatch(p.name).replace(/동/g,'').includes(k));
+      const hits = activeProps().filter(p=>normalizeForMatch(p.name).replace(/동/g,'').includes(k));
       if(hits.length===1) prop = hits[0];
     }
     cur.items.push({ nameRaw, prop, pass, notes: notes.filter(Boolean) });
@@ -962,8 +969,8 @@ function findPropByAddress(line){
   if(!road) return null;
   const fm = String(line).match(/[가-힣]+로\s*\d+[가-힣]*길\s*\d+(?:-\d+)?/);
   let c = [];
-  if(fm){ const fr = norm(fm[0]); c = state.properties.filter(p=> norm(p.address).includes(fr)); }
-  if(!c.length) c = state.properties.filter(p=> norm(p.address).includes(road));
+  if(fm){ const fr = norm(fm[0]); c = activeProps().filter(p=> norm(p.address).includes(fr)); }
+  if(!c.length) c = activeProps().filter(p=> norm(p.address).includes(road));
   if(unit){ const c2 = c.filter(p=> norm((p.address||'')+(p.name||'')).includes(unit)); if(c2.length) c = c2; }
   return c.length===1 ? c[0] : null;
 }
@@ -981,7 +988,7 @@ function parseCalMsg(text){
   const findProp = (raw)=>{
     const name = raw.trim(); if(!name) return null;
     const num = name.match(/^(\d{3,4})\s*호?$/);
-    if(num){ const hits = state.properties.filter(p=> new RegExp('(^|\\D)'+num[1]+'(\\D|$)').test(p.name)); return hits.length===1 ? hits[0] : null; }
+    if(num){ const hits = activeProps().filter(p=> new RegExp('(^|\\D)'+num[1]+'(\\D|$)').test(p.name)); return hits.length===1 ? hits[0] : null; }
     return findBestPropertyMatch(name);
   };
   String(text||'').split(/\r?\n/).forEach(raw=>{
@@ -1094,7 +1101,7 @@ function parseLooseAssign(text){
   const dayProps = (r.propertyIds||[]).map(id=>propById(id)).filter(Boolean);
   const esc2 = x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   let marks = [];
-  state.staff.forEach(st=>{
+  activeStaff().forEach(st=>{
     const re = new RegExp(esc2(st.name)+(st.name.length>=3?'\\s*님?':'\\s*님'),'g'); let m;
     while((m = re.exec(text))) marks.push({ i:m.index, end:m.index+m[0].length, st });
   });
@@ -1337,7 +1344,7 @@ async function openPastePreview(groups, entries, text, loose){
   };
 }
 function openSendSheet(){
-  const rows = state.staff.map(st=>{
+  const rows = activeStaff().map(st=>{
     const n = staffAssignedProps(st.id).length;
     const x = sentState(st.id);
     if(!n && x.s==='none') return '';
@@ -1360,7 +1367,7 @@ function openSendSheet(){
 }
 function renderSendStrip(){
   if(!isAdmin() || !state.staff.length || !state.todayRecord) return '';
-  const chips = state.staff.map(st=>{
+  const chips = activeStaff().map(st=>{
     const n = staffAssignedProps(st.id).length;
     const x = sentState(st.id);
     if(!n && x.s==='none') return '';
@@ -1388,8 +1395,8 @@ function openNoticeSheet(){
   root.className='overlay'; root.id='overlay';
   const draw = ()=>{
     const tpls = getTemplates();
-    const avail = state.staff.filter(st=>!staffUnavailable(st));
-    const unavail = state.staff.filter(st=>staffUnavailable(st));
+    const avail = activeStaff().filter(st=>!staffUnavailable(st));
+    const unavail = activeStaff().filter(st=>staffUnavailable(st));
     const row = st => `<div class="staff-item"><div style="flex:1;"><span class="sname">${esc(st.name)}</span>${staffUnavailable(st)?' <span style="color:var(--clay);font-size:11px;">오늘 '+offLabel(st)+'</span>':''}</div>
       ${st.phone?`<button data-nt-sms="${st.id}">문자</button>`:''}<button data-nt-share="${st.id}">카톡/복사</button></div>`;
     root.innerHTML = `
@@ -1505,8 +1512,8 @@ async function importStaffJson(){
   }catch(e){ alert('JSON 형식이 맞지 않아: '+e.message); }
 }
 function renderStaffTab(){
-  const avail = state.staff.filter(st=>!staffUnavailable(st));
-  const unavail = state.staff.filter(st=>staffUnavailable(st));
+  const avail = activeStaff().filter(st=>!staffUnavailable(st));
+  const unavail = activeStaff().filter(st=>staffUnavailable(st));
   const card = (st)=>{
     const days = (st.days&&st.days.length)?st.days:[0,1,2,3,4,5,6];
     const dtxt = days.length===7 ? '상시 가능' : days.map(d=>DAY_NAMES[d]).join('');
@@ -1545,6 +1552,10 @@ function renderStaffTab(){
     ${renderScheduleCalendar()}
     ${attend}
     ${state.staff.length ? avail.map(card).join('') + (unavail.length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.map(card).join(''):'') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
+    ${state.staff.some(st=>st.inactive) ? `<div style="margin-top:12px;">
+      <button class="relist-btn" id="toggleInactiveStaff">⏸ 중단된 직원 (${state.staff.filter(st=>st.inactive).length}명) ${state.inactiveStaffOpen ? '▲' : '▼'}</button>
+      ${state.inactiveStaffOpen ? state.staff.filter(st=>st.inactive).map(st=>`<div class="prop-card" style="opacity:.75;margin-top:8px;"><div class="prop-top" style="cursor:default;"><div><div class="prop-name">${esc(st.name)}</div></div>${isAdmin()?`<button class="pill-btn" data-staff-resume="${st.id}">다시 사용</button>`:''}</div></div>`).join('') : ''}
+    </div>` : ''}
     <div style="display:flex;gap:8px;margin-top:12px;">
       <button class="pill-btn" id="noticeBtn">📢 공지 보내기</button>
       <button class="pill-btn" id="staffAddBtn">+ 직원 추가</button>
@@ -1593,6 +1604,8 @@ function attachStaffHandlers(){
   document.querySelectorAll('[data-staff-msg]').forEach(b=> b.onclick = ()=> openPersonalSheet(b.dataset.staffMsg));
   const nb=document.getElementById('noticeBtn'); if(nb) nb.onclick = openNoticeSheet;
   const a=document.getElementById('staffAddBtn'); if(a) a.onclick = ()=> openStaffEditSheet(null);
+  { const t=document.getElementById('toggleInactiveStaff'); if(t) t.onclick = ()=>{ state.inactiveStaffOpen = !state.inactiveStaffOpen; render(); };
+    document.querySelectorAll('[data-staff-resume]').forEach(b=> b.onclick = async ()=>{ const i = state.staff.findIndex(x=>x.id===b.dataset.staffResume); if(i<0) return; state.staff[i] = { ...state.staff[i], inactive:false }; await saveStaff(); render(); }); }
   const i=document.getElementById('staffImportBtn'); if(i) i.onclick = importStaffJson;
 }
 // ===== 사진 (서버 저장: 작은 썸네일 문서 + 확인용 큰 사진 문서) =====
@@ -2086,7 +2099,7 @@ function parseUnitSchedule(text, defYear){
 // 호수만으로 숙소 찾기 ("LG 729호" → 이름에 729가 든 숙소가 하나뿐이면)
 function matchByUnitNumber(name){
   const n = String(name||'').match(/(\d{3,4})\s*호/); if(!n) return null;
-  let c = state.properties.filter(p=> new RegExp('(^|\\D)'+n[1]+'(\\D|$)').test(p.name));
+  let c = activeProps().filter(p=> new RegExp('(^|\\D)'+n[1]+'(\\D|$)').test(p.name));
   if(c.length>1){ const brand = /(LG|엘지|파라다이스)/i.test(name) ? c.filter(p=>/(LG|엘지|파라다이스)/i.test(p.name)) : c; if(brand.length) c = brand; }
   return c.length===1 ? c[0] : null;
 }
@@ -2317,7 +2330,7 @@ function openImportSheet(){
   };
 
   const stepKakao = ()=>{
-    const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const props = activeProps().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
     const rows0 = isCheckoutList(inText) ? parseCheckoutList(inText, y) : parseKakaoSchedule(inText, y);
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;">
       <h2>💬 대표 카톡 일정표</h2>
@@ -2378,7 +2391,7 @@ function openImportSheet(){
     const towel = isTowelSchedule(inText);
     const unread = towel ? [] : findUnreadLines(inText, data);
     const names = []; Object.values(data).forEach(arr=>arr.forEach(e=>{ if(!names.includes(e.raw)) names.push(e.raw); }));
-    const props = state.properties.slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const props = activeProps().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
     const guess = {}; names.forEach(n=>{ const m = findBestPropertyMatch(n) || matchByUnitNumber(n); guess[n] = m ? m.id : ''; });
     const unmatched = names.filter(n=>!guess[n]);
     const total = Object.values(data).reduce((a,b)=>a+b.length,0);
@@ -2708,7 +2721,7 @@ function openBulkParkingSheet(){
 
   function rowsHtml(filter){
     const q = (filter||'').trim().toLowerCase();
-    return state.properties
+    return activeProps()
       .filter(p => !q || p.name.toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q))
       .map(p => `
         <label class="picker-row ${selected.has(p.id)?'checked':''}" data-bulk-pick="${p.id}">
@@ -3082,6 +3095,8 @@ async function downloadBackup(){
 // 영문 대문자(LG 등)가 한글보다 커 보이는 걸 막기 위해 영문만 살짝 줄임
 function nameHtml(n){ return String(n||'').split(/([A-Za-z]+)/).map((t,i)=> i%2 ? `<span class="lat">${esc(t)}</span>` : esc(t)).join(''); }
 function propById(id){ return state.properties.find(p=>p.id===id); }
+function activeProps(){ return state.properties.filter(p=>!p.inactive); }
+function activeStaff(){ return state.staff.filter(st=>!st.inactive); }
 function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // 참고사항 텍스트를 개별 체크 항목으로 쪼갬
@@ -3232,7 +3247,7 @@ async function stepClockTime(field, delta){
 
 function renderPickerBody(mode){
   const isEdit = mode === 'edit';
-  const rows = state.properties.map(p=>`
+  const rows = state.properties.filter(p=>!p.inactive || state.pickerSelection.has(p.id)).map(p=>`
     <label class="picker-row ${state.pickerSelection.has(p.id)?'checked':''}" data-pick="${p.id}">
       <input type="checkbox" ${state.pickerSelection.has(p.id)?'checked':''} data-pick-cb="${p.id}">
       <div style="flex:1;">
@@ -3314,7 +3329,7 @@ function renderScheduleCards(){
     const dayNote = (state.todayRecord.dayNotes||{})[id] || '';
     const dayPassVal = (state.todayRecord.dayPass||{})[id] || '';
     if(/매번/.test(p.password||'') && !dayPassVal && assignedSt) warns.push('오늘 비번 미입력 (직원에게 "비번 추후 전달"로 나가고 있어)');
-    const assignOpts = `<option value="">작업자 미배정</option>` + state.staff.map(st=>`<option value="${st.id}" ${assignedSt&&assignedSt.id===st.id?'selected':''}>${esc(st.name)}${staffUnavailable(st)?' ('+offLabel(st)+')':''}</option>`).join('');
+    const assignOpts = `<option value="">작업자 미배정</option>` + state.staff.filter(st=>!st.inactive||(assignedSt&&assignedSt.id===st.id)).map(st=>`<option value="${st.id}" ${assignedSt&&assignedSt.id===st.id?'selected':''}>${esc(st.name)}${staffUnavailable(st)?' ('+offLabel(st)+')':''}</option>`).join('');
     const taskRows = tasks.map((t,idx)=>`
       <div class="task-item ${t.done?'done':''}">
         <div class="task-item-main" data-task="${id}:${idx}">
@@ -3398,7 +3413,7 @@ function renderScheduleCards(){
           ${isAdmin() ? `<!-- 배정표 버튼: 지금은 안 써서 숨김 (필요하면 <button id="openAssign" title="배정표">📋</button> 다시 추가) -->
           <button id="suggestOrderBtn" title="당일체크인 먼저 · 청소 끝나는 예상 순서로 정렬 (작업자 순서 반영)">🔢</button>
           <button id="openEditToday" title="숙소 추가제외">➕</button>
-          ${state.staff.length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${state.staff.some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
+          ${activeStaff().length && state.todayRecord ? `<button id="openSend" title="직원 보내기">✉️${activeStaff().some(st=>sentState(st.id).s==='changed') ? '<i class="sdot"></i>' : ''}</button>` : ''}
           <!-- 초기화(🔄) 버튼: 지금은 안 써서 숨김 (필요하면 <button id="relist" title="초기화">🔄</button> 다시 추가) -->` : ''}
           <button id="openMapAll" title="이 날 일정 전체 지도로 보기">🗺️</button>
         </div>
@@ -3421,9 +3436,10 @@ function renderScheduleCards(){
 
 function renderAll(){
   const q = state.search.trim().toLowerCase();
-  const list = state.properties.filter(p =>
-    !q || p.name.toLowerCase().includes(q) || (p.owner||'').toLowerCase().includes(q) || (p.room||'').toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q)
-  ).slice().sort(cmpByColor);
+  const qm = p => !q || p.name.toLowerCase().includes(q) || (p.owner||'').toLowerCase().includes(q) || (p.room||'').toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q);
+  const list = activeProps().filter(qm).slice().sort(cmpByColor);
+  const inactList = state.properties.filter(p=>p.inactive).filter(qm).slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const inactAll = state.properties.filter(p=>p.inactive).length;
   const cards = list.map(p=>{
     const open = state.openIds.has(p.id);
     return `
@@ -3454,6 +3470,7 @@ function renderAll(){
         }</div>
         <div class="detail-actions">
           ${isAdmin() ? `<button data-edit="${p.id}">수정</button>
+          <button data-pause="${p.id}">청소 중단</button>
           <button class="del" data-del="${p.id}">삭제</button>` : ''}
         </div>
       </div>
@@ -3463,7 +3480,7 @@ function renderAll(){
 
   return `
     <input class="search-box" id="searchBox" placeholder="상호명·담당자·주소로 검색" value="${esc(state.search)}">
-    <div class="prop-count"><b>${q ? '검색 결과 '+list.length+'곳 / ' : ''}전체 ${state.properties.length}곳</b></div>
+    <div class="prop-count"><b>${q ? '검색 결과 '+list.length+'곳 / ' : ''}전체 ${activeProps().length}곳${inactAll?` <span style="font-weight:400;color:var(--ink-soft);">· 중단 ${inactAll}곳</span>`:''}</b></div>
     ${COMPANY_MODE ? '' : `<div style="margin-bottom:12px;">
       <button class="relist-btn" id="toggleTools">⚙️ 관리 도구 ${state.toolsOpen ? '▲' : '▼'}</button>
       ${state.toolsOpen ? `
@@ -3476,6 +3493,10 @@ function renderAll(){
       ` : ''}
     </div>`}
     ${list.length ? cards : `<div class="empty">검색 결과가 없어.<br>다른 검색어로 찾아봐.</div>`}
+    ${inactAll ? `<div style="margin-top:14px;">
+      <button class="relist-btn" id="toggleInactive">⏸ 중단된 숙소 (${inactAll}곳) ${state.inactiveOpen||q ? '▲' : '▼'}</button>
+      ${(state.inactiveOpen||q) ? inactList.map(p=>`<div class="prop-card" style="opacity:.75;margin-top:8px;"><div class="prop-top" style="cursor:default;"><div><div class="prop-name">${esc(p.name)}</div><div class="prop-sub">${esc(p.address||'')}</div></div>${isAdmin()?`<button class="pill-btn" data-resume="${p.id}">다시 사용</button>`:''}</div></div>`).join('') : ''}
+    </div>` : ''}
   `;
 }
 
@@ -3867,7 +3888,7 @@ async function setupMapIfNeeded(){
 
   const targetIds = state.mapScope === 'today'
     ? (state.todayRecord ? state.todayRecord.propertyIds : [])
-    : state.properties.map(p=>p.id);
+    : activeProps().map(p=>p.id);
   const targets = targetIds.map(id=>propById(id)).filter(p=>p && p.address);
 
   if(targets.length === 0 && !state.companyLocation){
@@ -4187,6 +4208,36 @@ function attachHandlers(){
   if(cleanupAddressBtn) cleanupAddressBtn.onclick = cleanupAddressSpacing;
   const toggleToolsBtn = document.getElementById('toggleTools');
   if(toggleToolsBtn) toggleToolsBtn.onclick = ()=>{ state.toolsOpen = !state.toolsOpen; render(); };
+  const tglI = document.getElementById('toggleInactive'); if(tglI) tglI.onclick = ()=>{ state.inactiveOpen = !state.inactiveOpen; render(); };
+  document.querySelectorAll('[data-resume]').forEach(el=> el.onclick = async ()=>{
+    const i = state.properties.findIndex(x=>x.id===el.dataset.resume); if(i<0) return;
+    state.properties[i] = { ...state.properties[i], inactive:false }; await saveProperties(); render();
+  });
+  document.querySelectorAll('[data-pause]').forEach(el=> el.onclick = async (ev)=>{
+    ev.stopPropagation();
+    const p = propById(el.dataset.pause); if(!p || !isAdmin()) return;
+    if(!confirm('"'+p.name+'"을(를) 청소 중단(보관)할까?\n목록에서 접히고 일정 가져오기·숙소 선택에서 빠져. 정보와 지난 일정은 그대로 남아. 언제든 다시 사용할 수 있어.')) return;
+    let n = 0, days = [];
+    try{ const recs = await window.storage.recordsFrom(todayStr()); Object.keys(recs).forEach(ds=>{ if((recs[ds].propertyIds||[]).includes(p.id)) days.push(ds); }); n = days.length; }catch(e){}
+    if(n && confirm('앞으로 일정 '+n+'일에 이 숙소가 들어 있어.\n\n[확인] = 그 일정에서도 뺀다\n[취소] = 일정은 그대로 둔다')){
+      for(const ds of days){
+        try{
+          const x = await window.storage.get('today:'+ds, false); if(!x || !x.value) continue;
+          const rec = JSON.parse(x.value);
+          rec.propertyIds = (rec.propertyIds||[]).filter(id=>id!==p.id);
+          if(rec.tasks) delete rec.tasks[p.id];
+          rec.priorityIds = (rec.priorityIds||[]).filter(id=>id!==p.id);
+          ['assign','dayNotes','dayPass'].forEach(k=>{ if(rec[k]) delete rec[k][p.id]; });
+          if(!rec.propertyIds.length && !(rec.excludedIds||[]).length) await window.storage.delete('today:'+ds, false);
+          else await window.storage.set('today:'+ds, JSON.stringify(rec), false);
+        }catch(e){}
+      }
+      try{ await loadTodayRecord(); }catch(e){}
+    }
+    const i = state.properties.findIndex(x=>x.id===p.id);
+    if(i>=0){ state.properties[i] = { ...state.properties[i], inactive:true }; await saveProperties(); }
+    render();
+  });
   document.querySelectorAll('[data-del]').forEach(el=>{
     el.onclick = async (ev)=>{
       ev.stopPropagation();
@@ -4293,15 +4344,15 @@ function nameKey(s){
 function findBestPropertyMatch(line){
   const normLine = normalizeForMatch(line);
   // 0차: 이름이 정확히 같으면 그걸 우선
-  const exact = state.properties.find(p=>normalizeForMatch(p.name)===normLine) || state.properties.find(p=>(p.aliases||[]).some(a=>normalizeForMatch(a)===normLine));
+  const exact = activeProps().find(p=>normalizeForMatch(p.name)===normLine) || activeProps().find(p=>(p.aliases||[]).some(a=>normalizeForMatch(a)===normLine));
   if(exact) return exact;
   // 0.5차: 표기만 다른 같은 이름(LG/엘지, 투룸/2룸 등) 정리해서 비교
   const keyLine = nameKey(line);
-  const keyHit = state.properties.filter(p=>nameKey(p.name)===keyLine || (p.aliases||[]).some(a=>nameKey(a)===keyLine));
+  const keyHit = activeProps().filter(p=>nameKey(p.name)===keyLine || (p.aliases||[]).some(a=>nameKey(a)===keyLine));
   if(keyHit.length===1) return keyHit[0];
   // 1차: 포함 관계로 정확히 찾히는 것 우선 (더 짧게 일치하는 쪽이 더 정확한 매칭)
   let best = null;
-  state.properties.forEach(p=>{
+  activeProps().forEach(p=>{
     const normName = normalizeForMatch(p.name);
     if(normName.includes(normLine) || normLine.includes(normName)){
       if(!best || normName.length < normalizeForMatch(best.name).length) best = p;
@@ -4310,7 +4361,7 @@ function findBestPropertyMatch(line){
   if(best) return best;
   // 2차: 축약/오타 허용 - 편집거리(유사도) 기준으로 가장 가까운 것 사용
   let bestDist = Infinity, bestP = null;
-  state.properties.forEach(p=>{
+  activeProps().forEach(p=>{
     const normName = normalizeForMatch(p.name);
     const d = levenshteinDistance(normLine, normName);
     if(d < bestDist){ bestDist = d; bestP = p; }
@@ -4506,7 +4557,7 @@ async function suggestOrder(){
   const inOf = id=>{ const t=parseClockMin(propById(id).in); return t==null?9999:t; };
   // 예상 청소 끝나는 시각: 작업자별로 11:00 시작 → 청소시간 누적 + 곳 사이 이동 30분 (작업자 순서 기준)
   const eta = {};
-  (state.staff||[]).forEach(st=>{
+  activeStaff().forEach(st=>{
     let t = START_MIN, first = true;
     staffAssignedProps(st.id).forEach(id=>{
       const p = propById(id); if(!p || isPickupOnly(p)) return;
@@ -4520,7 +4571,7 @@ async function suggestOrder(){
   if(!confirm('당일 체크인 먼저, 그다음 청소가 먼저 끝날 걸로 예상되는 순서로 정렬할까?\n(작업자별 순서대로 11:00 시작 · 청소시간 + 이동 30분 누적)\n\n'+lines+(rest.length?`\n\n순서 제외(맨 아래): ${rest.map(id=>propById(id)?.name).join(', ')}`:''))) return;
   // 정렬해도 작업자별 순서(1·2번째)는 지금 그대로 고정
   r.workOrder = r.workOrder || {};
-  (state.staff||[]).forEach(st=> staffAssignedProps(st.id).forEach((id,k)=>{ r.workOrder[id] = k+1; }));
+  activeStaff().forEach(st=> staffAssignedProps(st.id).forEach((id,k)=>{ r.workOrder[id] = k+1; }));
   r.propertyIds = main.concat(rest);
   await saveTodayRecord(); render();
 }
