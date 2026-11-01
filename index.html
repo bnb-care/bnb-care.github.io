@@ -226,6 +226,7 @@
   .wash-btn.on{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:700;}
   .wk-chip .tag{font-size:12px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.08);white-space:nowrap;}
   .wk-empty{font-size:14px;color:var(--ink-soft);padding:4px 0;}
+  .cc-cell .cf{font-size:9px;font-weight:700;color:#8a6d1f;background:#FBF1D6;border-radius:4px;padding:0 4px;line-height:1.4;}
   .cc-cell{background:var(--surface);min-height:58px;padding:4px 2px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;}
   .cc-dow{text-align:center;}
   .cc-cell.out{background:#F7F8F4;} .cc-cell.out .n{opacity:.35;}
@@ -479,7 +480,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1101-6';
+const APP_BUILD = '1101-7';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -756,6 +757,8 @@ function selectedWeekday(){
 }
 function offLabel(st){ return staffOffToday(st) ? '휴무' : (st.onRequest ? '연락 시' : '불가'); }
 function offNamesOn(ds){ return activeStaff().filter(st=>(st.offDates||[]).includes(ds)).map(st=>{ const n=st.name||''; return /^[가-힣]{3}$/.test(n) ? n.slice(1) : n; }); }
+function offFullNames(ds){ return activeStaff().filter(st=>(st.offDates||[]).includes(ds)).map(st=>st.name); }
+function offLineHtml(ds){ const a = offFullNames(ds); return a.length ? `<div class="off-line" style="margin:6px 0;padding:6px 10px;border-radius:8px;background:#FBF1D6;color:#8a6d1f;font-size:13px;font-weight:600;">🌴 휴무: ${esc(a.join(', '))}</div>` : ''; }
 function offNamesHtml(ds){ const a = offNamesOn(ds); return a.length ? `<span class="off" title="휴무: ${esc(a.join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; }
 function staffOffToday(st){ return (st.offDates||[]).includes(state.selectedDate); }
 function staffUnavailable(st){
@@ -1934,7 +1937,7 @@ function renderWeekView(){
     const wd = dt.getDay(); const hol = holidayName(ds);
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     return `<div class="wk-day ${ds===tStr?'today':''} ${ds<tStr?'past':''}" data-cal-day="${ds}">
-      <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}<span class="cn">${chips.length?chips.length+'건'+washLabel(chips,' · '):''}</span></div>
+      <div class="wd"><b class="${cls}">${dt.getMonth()+1}/${dt.getDate()} (${DAY_NAMES[wd]})</b>${hol?`<span class="hol" style="font-size:12px;color:var(--clay);">${esc(hol)}</span>`:''}${offNamesOn(ds).length?`<span class="off" style="font-size:11px;font-weight:600;color:#8a6d1f;background:#FBF1D6;border-radius:4px;padding:0 5px;margin-left:6px;">휴 ${esc(offNamesOn(ds).join('·'))}</span>`:''}<span class="cn">${chips.length?chips.length+'건'+washLabel(chips,' · '):''}</span></div>
       ${chips.length ? chips.map(c=>`<div class="wk-chip ${c.done?'done':''}" style="${barStyle(c.p)}"><span class="nm">${esc(c.name)}</span>${c.pri?'<span class="tag" style="background:transparent;color:var(--clay);border:1px solid var(--clay);">당일</span>':''}${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${c.done?'<span class="tag">✓ 완료</span>':''}${washBtn(ds,c)}</div>`).join('') : '<div class="wk-empty">일정 없음</div>'}
     </div>`;
   }).join('');
@@ -1963,7 +1966,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     const dots = chips.slice(0,6).map(c=>`<i></i>`).join('');
     cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
-      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn ${(()=>{const w=washCount(chips);return w&&w.d===w.n?'done':'';})()}">${chips.length}</span>`:''}</div>`;
+      <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn ${(()=>{const w=washCount(chips);return w&&w.d===w.n?'done':'';})()}">${chips.length}</span>`:''}${offNamesOn(ds).length?'<span class="cf">휴 '+offNamesOn(ds).length+'</span>':''}</div>`;
   }
   const rec = state.monthRecords[pick];
   const chips = rec ? chipsFor(rec) : [];
@@ -1973,7 +1976,7 @@ function renderCompactCal(head, year, month, first, days, tStr){
     : '<div class="wk-empty">일정 없음</div>';
   const pastCls = pick < todayStr() ? 'past' : '';
   return head + `<div class="mc-grid">${cells}</div>
-    <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${chips.length?`<button data-cal-day="${pick}" title="자세히" aria-label="자세히">🔍</button>`:''}${isAdmin()?`<button data-cal-add="${pick}" title="일정 추가" aria-label="일정 추가">➕</button>`:''}</div>${list}</div>`;
+    <div class="cc-panel ${pastCls}"><div class="ph"><b>${pm}/${pd} (${DAY_NAMES[pw]})${hn?' · '+esc(hn):''} · ${chips.length}곳${washLabel(chips,' · ')}</b>${chips.length?`<button data-cal-day="${pick}" title="자세히" aria-label="자세히">🔍</button>`:''}${isAdmin()?`<button data-cal-add="${pick}" title="일정 추가" aria-label="일정 추가">➕</button>`:''}</div>${offLineHtml(pick)}${list}</div>`;
 }
 function renderCalendarTab(){
   if(!cloud) state.monthRecords = readLocalMonth();
@@ -3343,7 +3346,7 @@ function renderToday(){
     if(!isAdmin()) return renderScheduleCalendar() + `<div class="empty">${renderDateLabel()}<br>아직 등록된 일정이 없어.</div>`;
     return (activeStaff().length ? '<button class="pill-btn" id="openSend" style="width:100%;margin-bottom:10px;">🌙 직원에게 일정 없음 알리기</button>' : '') + renderPickerBody('create');
   }
-  return renderScheduleCalendar() + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
+  return renderScheduleCalendar() + offLineHtml(state.selectedDate) + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
 }
 
 // 당일 체크인(🔴)은 항상 맨 위로 (그 안에서는 저장된 순서 유지)
