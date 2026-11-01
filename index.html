@@ -73,6 +73,7 @@
   .count-item{font-family:var(--serif);font-size:17px;font-weight:700;color:var(--ink);}
   .count-item span{color:#6b7068;}
   .count-item.full span{color:var(--teal);}
+  .count-off{font-size:11px;font-weight:700;color:#8a6d1f;background:#FBF1D6;border-radius:6px;padding:1px 6px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;}
   .summary-actions{display:flex;gap:6px;margin-left:auto;}
   .summary-actions button{position:relative;}
   .summary-actions .sdot{position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:var(--clay);border:2px solid #fff;}
@@ -480,7 +481,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1101-7';
+const APP_BUILD = '1102-2';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3346,7 +3347,7 @@ function renderToday(){
     if(!isAdmin()) return renderScheduleCalendar() + `<div class="empty">${renderDateLabel()}<br>아직 등록된 일정이 없어.</div>`;
     return (activeStaff().length ? '<button class="pill-btn" id="openSend" style="width:100%;margin-bottom:10px;">🌙 직원에게 일정 없음 알리기</button>' : '') + renderPickerBody('create');
   }
-  return renderScheduleCalendar() + offLineHtml(state.selectedDate) + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
+  return renderScheduleCalendar() + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
 }
 
 // 당일 체크인(🔴)은 항상 맨 위로 (그 안에서는 저장된 순서 유지)
@@ -3603,7 +3604,7 @@ function renderScheduleCalendar(){
       <div class="schedule-cal-bar">
         <div style="display:flex;align-items:center;gap:6px;min-width:0;">
           <button class="dnav" data-day-nav="-1" aria-label="전날">◀</button>
-          <div style="white-space:nowrap;">${isTodaySelected ? '오늘 · ' : ''}<b>${dateLabel}</b></div>
+          <div style="white-space:nowrap;">${isTodaySelected ? '오늘 · ' : ''}<b>${dateLabel}</b>${(()=>{ const a = offNamesOn(state.selectedDate); return a.length ? ` <span class="count-off" title="휴무: ${esc(offFullNames(state.selectedDate).join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; })()}</div>
           <button class="dnav" data-day-nav="1" aria-label="다음날">▶</button>
         </div>
         <button id="toggleScheduleCal">달력 ▾</button>
