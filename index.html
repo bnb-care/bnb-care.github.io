@@ -254,6 +254,12 @@
   .cal-list-row .chips{display:flex;flex-wrap:wrap;gap:4px;}
   .cal-list-row .cchip{font-size:12px;padding:3px 7px;margin:0;border-radius:6px;overflow:visible;}
   @media(min-width:700px){ .cal-cell{min-height:118px;} .cchip{font-size:11.5px;padding:2px 5px;} .cal-cell .dn{font-size:13px;} }
+  .prop-set-row{margin-top:10px;padding:8px 10px;border:1px dashed var(--paper-line);border-radius:10px;}
+  .prop-set-row .ps-title{font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;}
+  .prop-set-row .ps-title span{font-weight:400;}
+  .ps-chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .ps-chip{border:1px solid var(--paper-line);background:var(--surface);color:var(--ink-soft);border-radius:14px;padding:5px 10px;font-size:13px;cursor:pointer;font-family:var(--sans);}
+  .ps-chip.on{background:var(--teal);color:#fff;border-color:var(--teal);}
   .assign-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
   .assign-row select{flex:1;padding:8px;border-radius:8px;border:1px solid var(--paper-line);font-size:14px;font-family:var(--sans);background:#fff;}
   .warn-line{font-size:12px;color:var(--clay);margin-top:4px;line-height:1.4;}
@@ -481,7 +487,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-10';
+const APP_BUILD = '1102-11';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3547,6 +3553,13 @@ function renderScheduleCards(){
             <span class="pw-icon">📝</span>
             <textarea class="day-note" data-daynote="${id}" placeholder="오늘 특이사항 (예: 5시체크인, 비번변경)">${esc(dayNote)}</textarea>
           </div>
+          ${isAdmin() ? `<div class="prop-set-row">
+            <div class="ps-title">⚙️ 이 숙소 설정 <span>(오늘 이후 일정에 반영)</span></div>
+            <div class="ps-chips">
+              ${['세탁 완료','세탁물 전달','컨디션 체크'].map(t=>`<button class="ps-chip ${(p.noTasks||[]).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}">${taskIcon(t)} ${t.replace('세탁물 전달','전달').replace('세탁 완료','세탁').replace('컨디션 체크','컨디션')}</button>`).join('')}
+              <button class="ps-chip ${p.pickupOnly?'on':''}" data-ps-pickup="${esc(id)}">수거만</button>
+              <button class="ps-chip ${p.alwaysPriority?'on':''}" data-ps-pri="${esc(id)}">🔴 항상 당일</button>
+            </div></div>` : ''}
           ${p.parkingUrl ? `
           <div class="pw-row">
             <span class="pw-icon">🚗</span>
@@ -3884,16 +3897,7 @@ function openEditSheet(prop){
         <div class="field"><label>주차등록 비밀번호</label><input id="f_parkingPw" value="${esc(e.parkingPw||'')}"></div>
       </div>
       <div class="field"><label>청소시간(분) · 비우면 크기로 자동 계산</label><input id="f_cleanMin" inputmode="numeric" value="${esc(e.cleanMin||'')}" placeholder="예: 90"></div>
-      <div class="field" style="margin-top:8px;"><label>체크할 항목 · 이 숙소에 필요한 것만 체크</label>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:14px;margin-top:4px;">
-          ${['세탁 완료','세탁물 전달','컨디션 체크'].map(t=>`<label style="display:flex;align-items:center;gap:5px;"><input type="checkbox" data-task-on="${t}" ${(e.noTasks||[]).includes(t)?'':'checked'}>${taskIcon(t)} ${t}</label>`).join('')}
-        </div>
-        <div style="font-size:12px;color:var(--ink-soft);margin-top:4px;">저장하면 오늘 이후에 이미 만든 일정에도 바로 반영돼 (지난 일정·이미 완료한 항목은 그대로).</div>
-      </div>
-      <label class="picker-row" style="margin-top:4px;">
-        <input type="checkbox" id="f_pickupOnly" ${e.pickupOnly?'checked':''}>
-        <div style="flex:1;"><div class="pname">세탁물 수거만 (순서 제외)</div><div class="paddr">청소 순서 계산과 예상 시각에서 빠지고 리스트 맨 아래로 가</div></div>
-      </label>
+      <div style="font-size:12px;color:var(--ink-soft);margin:6px 0;">체크할 항목·수거만 설정은 오늘탭 숙소 카드의 ⚙️ 에서 바꿔.</div>
       <label class="picker-row" style="margin-top:4px;">
         <input type="checkbox" id="f_alwaysPriority" ${e.alwaysPriority?'checked':''}>
         <div style="flex:1;"><div class="pname">항상 당일로 표시</div><div class="paddr">오늘 리스트에 이 업체가 포함되면 자동으로 🔴 당일 표시가 켜져</div></div>
@@ -3924,8 +3928,8 @@ function openEditSheet(prop){
       parkingPw: document.getElementById('f_parkingPw').value.trim(),
       alwaysPriority: document.getElementById('f_alwaysPriority').checked,
       cleanMin: parseInt(document.getElementById('f_cleanMin').value,10) || 0,
-      pickupOnly: document.getElementById('f_pickupOnly').checked,
-      noTasks: Array.from(root.querySelectorAll('[data-task-on]')).filter(c=>!c.checked).map(c=>c.dataset.taskOn),
+      pickupOnly: !!e.pickupOnly,
+      noTasks: e.noTasks||[],
     };
     if(!vals.name){ alert('상호명은 필수야.'); return; }
     if(e.id){
@@ -4350,6 +4354,17 @@ function attachHandlers(){
       await saveTodayRecord(); render();
     };
   });
+  const psSave = async (pid, patch)=>{
+    const i = state.properties.findIndex(x=>x.id===pid); if(i<0) return;
+    state.properties[i] = { ...state.properties[i], ...patch };
+    render();
+    await saveProperties();
+    try{ await applyPropToFuture(pid); }catch(e){}
+    render();
+  };
+  document.querySelectorAll('[data-ps-task]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const [pid,t] = el.dataset.psTask.split('|'); const p = propById(pid); if(!p) return; const cur = (p.noTasks||[]); psSave(pid, { noTasks: cur.includes(t) ? cur.filter(x=>x!==t) : cur.concat([t]) }); });
+  document.querySelectorAll('[data-ps-pickup]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPickup); if(p) psSave(p.id, { pickupOnly: !p.pickupOnly }); });
+  document.querySelectorAll('[data-ps-pri]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPri); if(p) psSave(p.id, { alwaysPriority: !p.alwaysPriority }); });
   document.querySelectorAll('[data-daynote]').forEach(el=>{
     el.onchange = async ()=>{
       const r = state.todayRecord; r.dayNotes = r.dayNotes || {};
