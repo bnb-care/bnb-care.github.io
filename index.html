@@ -489,7 +489,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-13';
+const APP_BUILD = '1102-14';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1945,7 +1945,7 @@ function chipsFor(rec){
   return rec.propertyIds.map(id=>{
     const p = propById(id); if(!p) return null;
     const tasks = (rec.tasks||{})[id] || [];
-    const done = tasks.length && tasks.every(t=>t.done);
+    const done = Array.isArray((rec.tasks||{})[id]) && tasks.every(t=>t.done);
     const wt = tasks.find(t=>t.text==='세탁 완료'); const wash = wt ? !!wt.done : null;
     return { id, p, name:p.name, pri: pri.includes(id), done, wash, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
   }).filter(Boolean).sort((x,y)=> (y.pri-x.pri) || cmpByColor(x.p, y.p));
