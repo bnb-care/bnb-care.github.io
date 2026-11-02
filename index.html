@@ -481,7 +481,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-4';
+const APP_BUILD = '1102-5';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1570,6 +1570,61 @@ async function importStaffJson(){
     render();
   }catch(e){ alert('JSON 형식이 맞지 않아: '+e.message); }
 }
+// 직원별 배정 현황 (기간별 건수·일수·자주 맡은 숙소)
+state.asOpen = false; state.asPeriod = 'month'; state.asData = null; state.asStaff = null;
+async function loadAssignStats(){
+  try{ state.asData = await window.storage.recordsFrom('2000-01-01'); }catch(e){ state.asData = {}; }
+  render();
+}
+function assignStatsRange(){
+  const t = todayStr(), [y,m] = t.split('-').map(Number);
+  if(state.asPeriod==='month') return [y+'-'+String(m).padStart(2,'0')+'-01', t];
+  if(state.asPeriod==='30'){ const d = new Date(); d.setDate(d.getDate()-29); return [d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'), t]; }
+  return ['0000-00-00', t];
+}
+function computeAssignStats(){
+  const [a,b] = assignStatsRange(); const recs = state.asData || {};
+  const out = {}; let unassigned = 0, total = 0, daysWithData = 0;
+  Object.keys(recs).filter(ds=>ds>=a && ds<=b).sort().forEach(ds=>{
+    const r = recs[ds]; const ids = r.propertyIds||[]; if(!ids.length) return;
+    let any = false;
+    ids.forEach(id=>{
+      total++;
+      const sid = (r.assign||{})[id];
+      if(!sid){ unassigned++; return; }
+      any = true;
+      const o = out[sid] = out[sid] || { n:0, days:new Set(), props:{} };
+      o.n++; o.days.add(ds); const nm = (propById(id)||{}).name || '(삭제된 숙소)'; o.props[nm] = (o.props[nm]||0)+1;
+    });
+    if(any) daysWithData++;
+  });
+  return { out, unassigned, total, daysWithData, range:[a,b] };
+}
+function renderAssignStats(){
+  if(!isAdmin()) return '';
+  const head = `<button class="pill-btn" id="asToggle" style="width:100%;margin-bottom:10px;">📊 직원별 배정 현황 ${state.asOpen?'▴':'▾'}</button>`;
+  if(!state.asOpen) return head;
+  if(!state.asData) return head + '<div class="empty" style="padding:10px;">불러오는 중…</div>';
+  const st = computeAssignStats();
+  const rows = Object.keys(st.out).map(sid=>{ const s0 = staffById(sid); return { sid, name: s0 ? s0.name : '(삭제된 직원)', o: st.out[sid], mgr: s0 && s0.role==='manager' }; }).sort((x,y)=>y.o.n-x.o.n);
+  const max = rows.length ? rows[0].o.n : 1;
+  const per = (k,l)=>`<button class="pill-btn" data-as-period="${k}" style="${state.asPeriod===k?'background:var(--teal);color:#fff;':''}">${l}</button>`;
+  const body = rows.length ? rows.map(r=>{
+    const open = state.asStaff===r.sid;
+    const top = Object.entries(r.o.props).sort((a,b)=>b[1]-a[1]);
+    return `<div data-as-row="${r.sid}" style="padding:7px 0;border-bottom:1px solid var(--paper-line);cursor:pointer;">
+      <div style="display:flex;align-items:center;gap:8px;"><b style="width:64px;flex-shrink:0;font-size:14px;">${esc(r.name)}${r.mgr?' <span style="font-size:10px;color:var(--ink-soft);">관리</span>':''}</b>
+        <div style="flex:1;height:14px;background:#EEF0EA;border-radius:7px;overflow:hidden;"><div style="width:${Math.max(6,Math.round(r.o.n/max*100))}%;height:100%;background:var(--teal);border-radius:7px;"></div></div>
+        <span style="width:84px;text-align:right;font-size:12.5px;flex-shrink:0;"><b>${r.o.n}건</b> · ${r.o.days.size}일</span></div>
+      ${open ? `<div style="margin:6px 0 2px 72px;font-size:12.5px;color:var(--ink-soft);line-height:1.7;">${top.map(([n,c])=>esc(n)+(c>1?' ×'+c:'')).join(' · ')}</div>` : ''}
+    </div>`;
+  }).join('') : '<div class="empty" style="padding:10px;">이 기간에 입력된 배정이 없어.</div>';
+  return head + `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">
+    <div style="display:flex;gap:6px;margin-bottom:8px;">${per('month','이번 달')}${per('30','최근 30일')}${per('all','전체')}</div>
+    ${body}
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;">전체 ${st.total}건 중 ${st.total-st.unassigned}건 배정${st.unassigned?` · <b style="color:var(--clay);">배정 안 된 숙소 ${st.unassigned}건</b>`:''}<br>이름을 누르면 자주 맡은 숙소가 보여. 배정을 입력한 날만 집계돼.</div>
+  </div></div>`;
+}
 function renderStaffTab(){
   const avail = activeStaff().filter(st=>!staffUnavailable(st));
   const unavail = activeStaff().filter(st=>staffUnavailable(st));
@@ -1610,6 +1665,7 @@ function renderStaffTab(){
   return `
     ${renderScheduleCalendar()}
     ${attend}
+    ${renderAssignStats()}
     ${state.staff.length ? avail.filter(st=>st.role!=='manager').map(card).join('') + (unavail.filter(st=>st.role!=='manager').length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.filter(st=>st.role!=='manager').map(card).join(''):'') + (activeStaff().some(st=>st.role==='manager') ? `<div style="font-size:12px;color:var(--ink-soft);margin:14px 0 6px;font-weight:700;">관리직</div>`+activeStaff().filter(st=>st.role==='manager').map(card).join('') : '') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
     ${state.staff.some(st=>st.inactive) ? `<div style="margin-top:12px;">
       <button class="relist-btn" id="toggleInactiveStaff">⏸ 중단된 직원 (${state.staff.filter(st=>st.inactive).length}명) ${state.inactiveStaffOpen ? '▲' : '▼'}</button>
@@ -1663,6 +1719,9 @@ function attachStaffHandlers(){
   document.querySelectorAll('[data-staff-msg]').forEach(b=> b.onclick = ()=> openPersonalSheet(b.dataset.staffMsg));
   const nb=document.getElementById('noticeBtn'); if(nb) nb.onclick = openNoticeSheet;
   const a=document.getElementById('staffAddBtn'); if(a) a.onclick = ()=> openStaffEditSheet(null);
+  { const t=document.getElementById('asToggle'); if(t) t.onclick = ()=>{ state.asOpen = !state.asOpen; if(state.asOpen) loadAssignStats(); else render(); };
+    document.querySelectorAll('[data-as-period]').forEach(b=> b.onclick = ()=>{ state.asPeriod = b.dataset.asPeriod; render(); });
+    document.querySelectorAll('[data-as-row]').forEach(r=> r.onclick = ()=>{ state.asStaff = state.asStaff===r.dataset.asRow ? null : r.dataset.asRow; render(); }); }
   { const t=document.getElementById('toggleInactiveStaff'); if(t) t.onclick = ()=>{ state.inactiveStaffOpen = !state.inactiveStaffOpen; render(); };
     document.querySelectorAll('[data-staff-resume]').forEach(b=> b.onclick = async ()=>{ const i = state.staff.findIndex(x=>x.id===b.dataset.staffResume); if(i<0) return; state.staff[i] = { ...state.staff[i], inactive:false }; await saveStaff(); render(); }); }
   const i=document.getElementById('staffImportBtn'); if(i) i.onclick = importStaffJson;
