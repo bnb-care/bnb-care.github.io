@@ -196,7 +196,8 @@
   .cc-cell:not(.today) .n.red{background:#F8E4E1;} .cc-cell:not(.today) .n.blue{background:#E3ECF6;}
   .cal-day.dow-red{background:#FBEDEB;} .cal-day.dow-blue{background:#EAF0F8;}
   .cal-cell .dn .cnt{font-size:9px;font-weight:700;color:var(--ink-soft);}
-  .cal-cell .dn .off{flex:1;min-width:0;margin:0 4px;font-size:9px;font-weight:600;color:#8a6d1f;background:#FBF1D6;border-radius:4px;padding:0 3px;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  .cal-cell .dn .cnt{margin-left:auto;}
+  .cal-cell .dn .off{flex:0 1 auto;min-width:0;margin:0 0 0 5px;font-size:9px;font-weight:600;color:#8a6d1f;background:#FBF1D6;border-radius:4px;padding:0 3px;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .cal-cell.today .dn b{background:var(--teal);color:#fff;border-radius:10px;padding:0 6px;}
   .cchip{display:block;font-size:9.5px;line-height:1.35;padding:1px 3px;margin-bottom:2px;border-radius:3px;background:var(--surface);box-shadow:inset 0 0 0 1px #D9D6CA;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cchip.pri{font-weight:700;color:#B3321A;}
@@ -489,7 +490,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-14';
+const APP_BUILD = '1102-15';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
