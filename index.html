@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-17';
+const APP_BUILD = '1102-18';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1257,12 +1257,76 @@ function looseAssignParts(groups){
   };
   return { html, apply };
 }
+// 대표 문자: "안녕하세요 내일 신촌로3나길8-10 302호 입니다. 체크아웃 3916* 체크인 1240*" → IN(=체크아웃 비번) / OUT(=체크인 비번)
+function parseOwnerPass(text){
+  const out = [];
+  const blocks = String(text||'').split(/(?=안녕하세요)/).filter(b=>/체크\s*아웃/.test(b) && /체크\s*인/.test(b));
+  const today = new Date();
+  const cmp = x=>String(x||'').replace(/\s+/g,'');
+  blocks.forEach(b=>{
+    const mo = b.match(/체크\s*아웃\s*[:：]?\s*([^\s]+)/); const mi = b.match(/체크\s*인\s*[:：]?\s*([^\s]+)/);
+    const head = b.slice(0, Math.min(...[b.search(/체크\s*아웃/), b.search(/체크\s*인/)].filter(i=>i>=0)));
+    let ds = state.selectedDate;
+    const off = /모레/.test(head) ? 2 : /내일/.test(head) ? 1 : /오늘/.test(head) ? 0 : null;
+    const md = head.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/) || head.match(/(\d{1,2})\/(\d{1,2})/);
+    if(md) ds = ymd(today.getFullYear(), Number(md[1])-1, Number(md[2]));
+    else if(off!==null){ const d = new Date(today.getFullYear(), today.getMonth(), today.getDate()+off); ds = ymd(d.getFullYear(), d.getMonth(), d.getDate()); }
+    const road = (head.match(/([가-힣0-9]+(?:로|길)\s*\d+(?:-\d+)?)/)||[])[1] || '';
+    const hosu = (head.match(/(\d{2,4})\s*호/)||[])[1] || '';
+    const cands = state.properties.filter(pr=>{
+      const a = cmp(pr.address), nm = cmp(pr.name);
+      if(!road || !a.includes(cmp(road))) return false;
+      return hosu ? (a.includes(hosu+'호') || nm.includes(hosu)) : true;
+    });
+    out.push({ ds, road, hosu, prop: cands.length===1 ? cands[0] : null, multi: cands.length>1, inPw: mo[1].trim(), outPw: mi[1].trim() });
+  });
+  return out;
+}
+async function applyOwnerPass(items){
+  let n = 0; const msgs = [];
+  for(const it of items){
+    if(!it.prop){ msgs.push('숙소를 못 찾았어'); continue; }
+    const pid = it.prop.id;
+    if(it.ds === state.selectedDate && state.todayRecord){
+      const r = state.todayRecord;
+      if(!(r.propertyIds||[]).includes(pid)){ msgs.push(`${it.prop.name}: 그날 일정에 없어`); continue; }
+      r.dayPass = r.dayPass||{}; r.dayPassOut = r.dayPassOut||{};
+      r.dayPass[pid] = it.inPw; r.dayPassOut[pid] = it.outPw; await saveTodayRecord(); n++;
+    } else {
+      let rec = null; try{ const x = await window.storage.get('today:'+it.ds, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){}
+      if(!rec || !(rec.propertyIds||[]).includes(pid)){ msgs.push(`${it.prop.name}: ${it.ds.slice(5)} 일정에 없어`); continue; }
+      rec.dayPass = rec.dayPass||{}; rec.dayPassOut = rec.dayPassOut||{};
+      rec.dayPass[pid] = it.inPw; rec.dayPassOut[pid] = it.outPw;
+      try{ await window.storage.set('today:'+it.ds, JSON.stringify(rec), false); n++; }catch(e){ msgs.push(`${it.prop.name}: 저장 실패`); }
+    }
+  }
+  Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]);
+  return { n, msgs };
+}
+function openOwnerPassSheet(items, text){
+  const root = document.createElement('div'); root.className='overlay'; root.id='overlay';
+  const rows = items.map((it,i)=>`<div style="padding:8px 0;border-top:1px solid var(--paper-line);font-size:13px;">
+    <div style="font-weight:700;">${esc(formatDateLabel(it.ds))} · ${it.prop?esc(it.prop.name):`<span style="color:var(--clay);">${it.multi?'숙소가 여러 곳이라 못 정했어':'숙소를 못 찾았어'} (${esc(it.road+' '+it.hosu)})</span>`}</div>
+    <div style="color:var(--ink-soft);">IN(체크아웃 비번) <b style="color:var(--ink);font-family:var(--mono);">${esc(it.inPw)}</b> · OUT(체크인 비번) <b style="color:var(--ink);font-family:var(--mono);">${esc(it.outPw)}</b></div></div>`).join('');
+  root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>🔑 대표 문자로 읽었어</h2>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">체크아웃 비번은 IN(들어갈 때), 체크인 비번은 OUT(나올 때 바꿀 비번)으로 들어가. 그날 일정에 있는 숙소만 적용돼.</div>${rows}
+    <div class="sheet-actions"><button class="cancel-btn" id="op_back">뒤로</button><button class="save-btn" id="op_apply" ${items.some(i=>i.prop)?'':'disabled'}>적용</button></div></div>`;
+  document.body.appendChild(root);
+  root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
+  document.getElementById('op_back').onclick = ()=>{ root.remove(); openPasteSheet(); setTimeout(()=>{ const t=document.getElementById('ps_text'); if(t) t.value = text||''; },0); };
+  document.getElementById('op_apply').onclick = async ()=>{
+    const r = await applyOwnerPass(items);
+    root.remove(); render();
+    alert(`${r.n}곳에 적용했어.` + (r.msgs.length ? '\n' + r.msgs.join('\n') : ''));
+  };
+}
 function openPasteSheet(){
   const root = document.createElement('div'); root.className='overlay'; root.id='overlay';
   root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>📥 메시지 붙여넣기</h2>
     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">아래 두 가지를 구분해서 읽어줘. 둘이 섞여 있어도 돼. 미리보기부터 보여주고 저장은 "적용"을 눌러야 해.<br>
     · <b>배정 문서</b> 예) 조아라님 ↵ 1.창천동 잇다 302호 / 3198* → <b>${esc(renderDateLabel())}</b> 일정에 작업자·순서·오늘 비번·메모<br>
     · <b>수건·인원 메시지</b> 예) 🔑 1208호 🔑 ↵ 10월 22일(1박) ↵ 게스트 2명 ↵ [작은수건] 6 → 날짜별 카드의 오늘 특이사항<br>
+    · <b>대표 문자(비번)</b> 예) 안녕하세요 내일 신촌로3나길8-10 302호 입니다 ↵ 체크아웃 3916* ↵ 체크인 1240* → 그날 카드의 IN / OUT 비번<br>
     · <b>줄글</b> 예) 조정이님 엘지2개 박미정님 창천동잇다3룸 → 이 날 카드에서 찾아 배정</div>
     <textarea id="ps_text" style="width:100%;height:240px;font-size:13px;"></textarea>
     <div class="sheet-actions"><button class="cancel-btn" id="ps_cancel">닫기</button><button class="save-btn" id="ps_next">미리보기</button></div></div>`;
@@ -1271,6 +1335,8 @@ function openPasteSheet(){
   document.getElementById('ps_cancel').onclick = ()=> root.remove();
   document.getElementById('ps_next').onclick = ()=>{
     const text = document.getElementById('ps_text').value;
+    const own = parseOwnerPass(text);
+    if(own.length){ root.remove(); openOwnerPassSheet(own, text); return; }
     const entries = parseCalMsg(text);
     let groups = parseAssignDoc(text).filter(g=>g.items.length);
     // 날짜 스케줄로 읽힌 경우, "01 일 (당일) 1~6" 같은 줄이 번호 줄로 잘못 잡힌 이름 없는 묶음은 버림
