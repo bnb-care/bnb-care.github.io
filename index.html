@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-19';
+const APP_BUILD = '1102-20';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -2031,13 +2031,13 @@ function shortName(n){
     .replace(/(엘지|LG|lg)(팰리스|펠리스|팰리|펠리)/,'엘지')
     .replace(/동교로25길/,'동교25·').replace(/창천동잇다/,'창천').replace(/호$/,'');
 }
-function chipsFor(rec){
+function chipsFor(rec, ds){
   const pri = rec.priorityIds || [];
   // 보기 순서: 당일체크인 먼저 → 나머지는 숙소 리스트 순서(대표 색 순 → 이름순) (저장된 순서는 안 바뀜)
   return rec.propertyIds.map(id=>{
     const p = propById(id); if(!p) return null;
     const tasks = (rec.tasks||{})[id] || [];
-    const done = Array.isArray((rec.tasks||{})[id]) && tasks.every(t=>t.done);
+    const done = Array.isArray((rec.tasks||{})[id]) && (tasks.length ? tasks.every(t=>t.done) : !!(ds && ds <= todayStr()));
     const wt = tasks.find(t=>t.text==='세탁 완료'); const wash = wt ? !!wt.done : null;
     return { id, p, name:p.name, pri: pri.includes(id), done, wash, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
   }).filter(Boolean).sort((x,y)=> (y.pri-x.pri) || cmpByColor(x.p, y.p));
@@ -2131,7 +2131,7 @@ function renderWeekView(){
     </div>`;
   const body = days.map(({dt,ds})=>{
     const rec = state.monthRecords[ds];
-    const chips = rec ? chipsFor(rec) : [];
+    const chips = rec ? chipsFor(rec, ds) : [];
     const wd = dt.getDay(); const hol = holidayName(ds);
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     return `<div class="wk-day ${ds===tStr?'today':''} ${ds<tStr?'past':''}" data-cal-day="${ds}">
@@ -2160,14 +2160,14 @@ function renderCompactCal(head, year, month, first, days, tStr){
     const ds = ymd(dt.getFullYear(), dt.getMonth(), dt.getDate());
     const inMonth = dt.getMonth() === month, wd = dt.getDay(), hol = holidayName(ds);
     const rec = state.monthRecords[ds] || null;
-    const chips = rec ? chipsFor(rec) : [];
+    const chips = rec ? chipsFor(rec, ds) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     const dots = chips.slice(0,6).map(c=>`<i></i>`).join('');
     cells += `<div class="cc-cell ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===pick?'sel':''}" data-cal-pick="${ds}">
       <span class="n ${cls}">${dt.getDate()}</span>${chips.length?`<span class="cn ${(()=>{const w=washCount(chips);return w&&w.d===w.n?'done':'';})()}">${chips.length}</span>`:''}${offNamesOn(ds).length?'<span class="cf">휴 '+offNamesOn(ds).length+'</span>':''}</div>`;
   }
   const rec = state.monthRecords[pick];
-  const chips = rec ? chipsFor(rec) : [];
+  const chips = rec ? chipsFor(rec, pick) : [];
   const [py,pm,pd] = pick.split('-').map(Number); const pw = new Date(py,pm-1,pd).getDay(); const hn = holidayName(pick);
   const list = chips.length ? chips.map((c,i)=>
       `<div class="wk-chip cp-row ${c.wash?'washed':''}"><span class="order-num ${c.pri?'pri':''}">${i+1}</span><span class="nm">${esc(c.name)}</span>${c.worker?`<span class="tag">${esc(c.worker)}</span>`:''}${washBtn(pick,c)}</div>`).join('')
@@ -2203,7 +2203,7 @@ function renderCalendarTab(){
       if(!rec || !(rec.propertyIds||[]).length) continue;
       const wd = new Date(year,month,d).getDay();
       const cls = (wd===0 || holidayName(ds)) ? 'red' : (wd===6 ? 'blue' : '');
-      const chips = chipsFor(rec);
+      const chips = chipsFor(rec, ds);
       rows.push(`<div class="cal-list-row ${ds===state.selectedDate?'sel':''} ${ds<todayStr()?'past':''}" data-cal-day="${ds}">
         <div class="d"><span class="${cls}">${month+1}/${d} (${DAY_NAMES[wd]}) ${holidayName(ds)?'· '+holidayName(ds):''}</span><span style="font-size:12px;color:var(--ink-soft);">${chips.length}건</span></div>
         <div class="chips">${chips.map(c=>`<span class="cchip ${c.pri?'pri':''} ${c.done?'done':''}" style="${barStyle(c.p)}">${esc(c.name)}${c.wash?' 🧺':''}${c.worker?' · '+esc(c.worker):''}</span>`).join('')}</div></div>`);
@@ -2222,7 +2222,7 @@ function renderCalendarTab(){
     const wd = dt.getDay();
     const hol = holidayName(ds);
     const rec = state.monthRecords[ds] || null;
-    const chips = rec ? chipsFor(rec) : [];
+    const chips = rec ? chipsFor(rec, ds) : [];
     const cls = (wd===0 || hol) ? 'red' : (wd===6 ? 'blue' : '');
     cells += `<div class="cal-cell ${cls?'dow-'+cls:''} ${inMonth?'':'out'} ${ds===tStr?'today':''} ${ds<tStr?'past':''} ${ds===state.selectedDate?'sel':''}" data-cal-day="${ds}">
       <div class="dn"><b class="${cls}">${dt.getDate()}</b><span class="hol">${esc(hol)}</span>${offNamesHtml(ds)}${chips.length?`<span class="cnt">${chips.length}</span>`:''}</div>
