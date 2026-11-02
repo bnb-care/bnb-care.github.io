@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-18';
+const APP_BUILD = '1102-19';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3657,11 +3657,6 @@ function renderScheduleCards(){
             <span class="pw-icon">📝</span>
             <textarea class="day-note" data-daynote="${id}" placeholder="오늘 특이사항 (예: 5시체크인, 비번변경)">${esc(dayNote)}</textarea>
           </div>
-          ${isAdmin() && state.psOpen && state.psOpen.has(id) ? `<div class="prop-set-row">
-            <div class="ps-chips">
-              ${[['세탁 완료','🧺'],['세탁물 전달','🚚'],['컨디션 체크','✅']].map(([t,e])=>`<button class="ps-chip ${(p.noTasks||[]).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}" title="${t}">${e}</button>`).join('')}
-              <button class="ps-chip ${isPickupOnly(p)?'on':''}" data-ps-pickup="${esc(id)}" title="세탁물 수거만 (순서 제외)">📦</button>
-            </div></div>` : ''}
           ${p.parkingUrl ? `
           <div class="pw-row">
             <span class="pw-icon">🚗</span>
@@ -3671,6 +3666,11 @@ function renderScheduleCards(){
             </div>
           </div>` : ''}
           ${isAdmin() ? missingRow : ''}
+          ${isAdmin() && state.psOpen && state.psOpen.has(id) ? `<div class="prop-set-row">
+            <div class="ps-chips">
+              ${[['세탁 완료','🧺'],['세탁물 전달','🚚'],['컨디션 체크','✅']].map(([t,e])=>`<button class="ps-chip ${(p.noTasks||[]).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}" title="${t}">${e}</button>`).join('')}
+              <button class="ps-chip ${isPickupOnly(p)?'on':''}" data-ps-pickup="${esc(id)}" title="세탁물 수거만 (순서 제외)">📦</button>
+            </div></div>` : ''}
           ${isAdmin() ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;"><button data-ps-toggle="${id}" title="이 숙소 설정" aria-label="이 숙소 설정" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:${state.psOpen&&state.psOpen.has(id)?1:.55};cursor:pointer;">⚙️</button><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
         </div>
       </div>
