@@ -259,6 +259,8 @@
   .prop-set-row .ps-title span{font-weight:400;}
   .ps-chips{display:flex;flex-wrap:wrap;gap:6px;}
   .ps-chip{border:1px solid var(--paper-line);background:var(--surface);color:var(--ink-soft);border-radius:14px;padding:5px 10px;font-size:13px;cursor:pointer;font-family:var(--sans);}
+  .ps-chip:not(.on){opacity:.45;filter:grayscale(1);}
+  .ps-chip{font-size:18px;line-height:1;padding:6px 12px;}
   .ps-chip.on{background:var(--teal);color:#fff;border-color:var(--teal);}
   .assign-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
   .assign-row select{flex:1;padding:8px;border-radius:8px;border:1px solid var(--paper-line);font-size:14px;font-family:var(--sans);background:#fff;}
@@ -487,7 +489,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-11';
+const APP_BUILD = '1102-13';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -747,6 +749,8 @@ function ensureLaundryStep(rec, ds){
     if(!rec || !rec.tasks || ds < todayStr()) return rec;
     (rec.propertyIds||[]).forEach(id=>{
       const arr = rec.tasks[id]; if(!arr) return;
+      const pp = (typeof propById==='function') ? propById(id) : null;
+      if(pp && (pp.noTasks||[]).includes('세탁 완료')) return;
       if(!arr.some(t=>t.text==='세탁 완료')) arr.unshift({text:'세탁 완료', done:false});
     });
   }catch(e){}
@@ -3553,12 +3557,10 @@ function renderScheduleCards(){
             <span class="pw-icon">📝</span>
             <textarea class="day-note" data-daynote="${id}" placeholder="오늘 특이사항 (예: 5시체크인, 비번변경)">${esc(dayNote)}</textarea>
           </div>
-          ${isAdmin() ? `<div class="prop-set-row">
-            <div class="ps-title">⚙️ 이 숙소 설정 <span>(오늘 이후 일정에 반영)</span></div>
+          ${isAdmin() && state.psOpen && state.psOpen.has(id) ? `<div class="prop-set-row">
             <div class="ps-chips">
-              ${['세탁 완료','세탁물 전달','컨디션 체크'].map(t=>`<button class="ps-chip ${(p.noTasks||[]).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}">${taskIcon(t)} ${t.replace('세탁물 전달','전달').replace('세탁 완료','세탁').replace('컨디션 체크','컨디션')}</button>`).join('')}
-              <button class="ps-chip ${p.pickupOnly?'on':''}" data-ps-pickup="${esc(id)}">수거만</button>
-              <button class="ps-chip ${p.alwaysPriority?'on':''}" data-ps-pri="${esc(id)}">🔴 항상 당일</button>
+              ${[['세탁 완료','🧺'],['세탁물 전달','🚚'],['컨디션 체크','✅']].map(([t,e])=>`<button class="ps-chip ${(p.noTasks||[]).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}" title="${t}">${e}</button>`).join('')}
+              <button class="ps-chip ${isPickupOnly(p)?'on':''}" data-ps-pickup="${esc(id)}" title="세탁물 수거만 (순서 제외)">📦</button>
             </div></div>` : ''}
           ${p.parkingUrl ? `
           <div class="pw-row">
@@ -3569,7 +3571,7 @@ function renderScheduleCards(){
             </div>
           </div>` : ''}
           ${isAdmin() ? missingRow : ''}
-          ${isAdmin() ? `<div style="text-align:right;margin-top:6px;"><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
+          ${isAdmin() ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;"><button data-ps-toggle="${id}" title="이 숙소 설정" aria-label="이 숙소 설정" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:${state.psOpen&&state.psOpen.has(id)?1:.55};cursor:pointer;">⚙️</button><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
         </div>
       </div>
     `;
@@ -3928,7 +3930,7 @@ function openEditSheet(prop){
       parkingPw: document.getElementById('f_parkingPw').value.trim(),
       alwaysPriority: document.getElementById('f_alwaysPriority').checked,
       cleanMin: parseInt(document.getElementById('f_cleanMin').value,10) || 0,
-      pickupOnly: !!e.pickupOnly,
+      pickupOnly: e.pickupOnly,
       noTasks: e.noTasks||[],
     };
     if(!vals.name){ alert('상호명은 필수야.'); return; }
@@ -4354,6 +4356,7 @@ function attachHandlers(){
       await saveTodayRecord(); render();
     };
   });
+  document.querySelectorAll('[data-ps-toggle]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); state.psOpen = state.psOpen || new Set(); const k=el.dataset.psToggle; if(state.psOpen.has(k)) state.psOpen.delete(k); else state.psOpen.add(k); render(); });
   const psSave = async (pid, patch)=>{
     const i = state.properties.findIndex(x=>x.id===pid); if(i<0) return;
     state.properties[i] = { ...state.properties[i], ...patch };
@@ -4363,7 +4366,7 @@ function attachHandlers(){
     render();
   };
   document.querySelectorAll('[data-ps-task]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const [pid,t] = el.dataset.psTask.split('|'); const p = propById(pid); if(!p) return; const cur = (p.noTasks||[]); psSave(pid, { noTasks: cur.includes(t) ? cur.filter(x=>x!==t) : cur.concat([t]) }); });
-  document.querySelectorAll('[data-ps-pickup]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPickup); if(p) psSave(p.id, { pickupOnly: !p.pickupOnly }); });
+  document.querySelectorAll('[data-ps-pickup]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPickup); if(p) psSave(p.id, { pickupOnly: !isPickupOnly(p) }); });
   document.querySelectorAll('[data-ps-pri]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPri); if(p) psSave(p.id, { alwaysPriority: !p.alwaysPriority }); });
   document.querySelectorAll('[data-daynote]').forEach(el=>{
     el.onchange = async ()=>{
@@ -4688,7 +4691,7 @@ function setupCardDrag(){
 // ===== 청소 예상 시간 (대략적인 가이드) =====
 const TRAVEL_MIN = 30, START_MIN = 11*60, WARN_SLACK = 60;
 function staffShort(n){ n=String(n||'').trim(); return (/^[가-힣]{3,4}$/.test(n)) ? n.slice(1) : n; }
-function isPickupOnly(p){ return !!p.pickupOnly || /^연남동?\s*3\s*룸/.test(p.name||''); }
+function isPickupOnly(p){ return (p.pickupOnly===true||p.pickupOnly===false) ? p.pickupOnly : /^연남동?\s*3\s*룸/.test(p.name||''); }
 function parseClockMin(str){
   if(!str) return null; const t = String(str);
   let m = t.match(/(\d{1,2})\s*:\s*(\d{2})/);
