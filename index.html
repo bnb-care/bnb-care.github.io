@@ -481,7 +481,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-8';
+const APP_BUILD = '1102-10';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -842,7 +842,8 @@ function openAssignSheet(){
   document.body.appendChild(root);
   document.getElementById('closeAssign').onclick = ()=> root.remove();
   document.getElementById('shareAssign').onclick = async ()=>{
-    const text = buildAssignText();
+    const text = buildAssignText().replace(/\s+$/,'');
+    if(copyMode()){ await copyOnly(text); return; }
     if(navigator.share){ try{ await navigator.share({text}); return; }catch(e){ if(e && e.name==='AbortError') return; } }
     try{ await navigator.clipboard.writeText(text); alert('복사했어.'); }
     catch(e){ const ta=document.getElementById('assignText'); ta.removeAttribute('readonly'); ta.select(); alert('텍스트를 길게 눌러 복사해줘.'); }
@@ -1426,6 +1427,7 @@ function openSendSheet(){
       ${idle.map(st=>`<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--paper-line);">
         <div style="flex:1;min-width:0;"><b>${esc(st.name)}</b><div>${sentBadge(st.id) || '<span style="font-size:12px;color:var(--ink-soft);">아직 안 보냄</span>'}</div></div>
         ${st.phone?`<button class="pill-btn" data-idle-sms="${st.id}">문자</button>`:''}
+        <button class="pill-btn" data-idle-copy="${st.id}">복사</button>
         <button class="pill-btn" data-idle-share="${st.id}">공유</button></div>`).join('')}
     </div>` : '';
   const root = document.createElement('div');
@@ -1433,15 +1435,18 @@ function openSendSheet(){
   root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>✉️ 직원 보내기</h2>
     <div style="margin-bottom:8px;">${rows || '<div style="font-size:13px;color:var(--ink-soft);">보낼 일정이 없어.</div>'}</div>
     ${idleHtml}
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:4px 0 10px;"><input type="checkbox" id="copyModeCb" ${copyMode()?'checked':''}>공유창 대신 복사해서 붙여넣기 (카톡 아래 빈 줄 방지)</label>
     <button class="pill-btn" id="openPaste" style="width:100%;margin-bottom:8px;">📥 메시지 붙여넣기 (배정 문서 · 수건·인원)</button>
     <div class="sheet-actions"><button class="cancel-btn" id="closeSend">닫기</button></div></div>`;
   document.body.appendChild(root);
   document.getElementById('closeSend').onclick = ()=> root.remove();
+  document.getElementById('copyModeCb').onchange = (e)=>{ try{ localStorage.setItem('pref:shareMode', e.target.checked?'copy':'share'); }catch(_){} };
   document.getElementById('openPaste').onclick = ()=>{ root.remove(); openPasteSheet(); };
   root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
   root.querySelectorAll('[data-send-to]').forEach(b=> b.onclick = ()=>{ const id=b.dataset.sendTo; root.remove(); openPersonalSheet(id); });
   const idleText = (st)=>{ const t = (document.getElementById('idle_tpl').value || idleTpl); try{ localStorage.setItem('pref:idleMsg', t); }catch(e){} return t.replace(/\{이름\}/g, st.name).replace(/\{날짜\}/g, dateWord()); };
   root.querySelectorAll('[data-idle-sms]').forEach(b=> b.onclick = ()=>{ const st = staffById(b.dataset.idleSms); if(!st) return; const body = idleText(st); markSent(st.id); render(); location.href = smsHref(st.phone, body); });
+  root.querySelectorAll('[data-idle-copy]').forEach(b=> b.onclick = async ()=>{ const st = staffById(b.dataset.idleCopy); if(!st) return; const done = await copyOnly(idleText(st)); if(done){ markSent(st.id); root.remove(); render(); openSendSheet(); } });
   root.querySelectorAll('[data-idle-share]').forEach(b=> b.onclick = async ()=>{ const st = staffById(b.dataset.idleShare); if(!st) return; const done = await shareOrCopy(idleText(st)); if(done){ markSent(st.id); root.remove(); render(); openSendSheet(); } });
 }
 function renderSendStrip(){
@@ -1459,10 +1464,19 @@ function renderSendStrip(){
 }
 function fmtClock(ts){ const d = new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function smsHref(phone, body){
+  body = String(body||'').replace(/\s+$/,'');
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
   return 'sms:'+String(phone).replace(/[^0-9+]/g,'')+(ios?'&':'?')+'body='+encodeURIComponent(body);
 }
+function copyMode(){ try{ return localStorage.getItem('pref:shareMode')==='copy'; }catch(e){ return false; } }
+async function copyOnly(text){
+  text = String(text||'').replace(/\s+$/,'');
+  try{ await navigator.clipboard.writeText(text); alert('복사했어. 카톡에 붙여넣어줘.'); return true; }
+  catch(e){ prompt('아래 문구를 복사해줘', text); return true; }
+}
 async function shareOrCopy(text){
+  text = String(text||'').replace(/\s+$/,''); // 끝의 빈 줄/공백 제거 (카톡에서 아래 한 줄 뜨는 것 방지)
+  if(copyMode()) return copyOnly(text);
   if(navigator.share){ try{ await navigator.share({ text }); return true; }catch(e){ if(e && e.name==='AbortError') return false; } }
   try{ await navigator.clipboard.writeText(text); alert('복사했어. 카톡에 붙여넣어줘.'); return true; }
   catch(e){ prompt('아래 문구를 복사해줘', text); return true; }
@@ -1556,6 +1570,7 @@ function openPersonalSheet(stId){
       <div class="sheet-actions" style="flex-wrap:wrap;">
         <button class="cancel-btn" id="pm_close">닫기</button>
         ${st.phone?`<button class="cancel-btn" id="pm_sms">문자</button>`:''}
+        <button class="cancel-btn" id="pm_copy">복사</button>
         <button class="save-btn" id="pm_share">카톡 등으로 공유</button>
       </div>
     </div>`;
@@ -1571,6 +1586,7 @@ function openPersonalSheet(stId){
   document.getElementById('pm_close').onclick = ()=> root.remove();
   const sms = document.getElementById('pm_sms');
   if(sms) sms.onclick = ()=>{ markSent(st.id); render(); location.href = smsHref(st.phone, ta.value); };
+  document.getElementById('pm_copy').onclick = async ()=>{ const done = await copyOnly(ta.value); if(done){ markSent(st.id); render(); } };
   document.getElementById('pm_share').onclick = async ()=>{
     const done = await shareOrCopy(ta.value);
     if(done){ markSent(st.id); render(); }
@@ -3035,6 +3051,9 @@ function triggerCompletionReport(propertyId){
       const files = await collectPhotoFiles(propertyId);
       if(files.length && navigator.canShare && navigator.canShare({ files })){
         await navigator.share({ files, text: message });
+      } else if(copyMode()){
+        if(files.length) alert('복사 방식이라 사진은 따로 보내줘. 문구만 복사할게.');
+        await copyOnly(message);
       } else if(navigator.share){
         if(files.length) alert('이 기기에서는 사진 공유가 안 돼서 문구만 보낼게.');
         await navigator.share({ text: message });
@@ -3060,7 +3079,9 @@ function triggerLaundryReport(){
   const message = `[완료 보고] ${dateLabel} 오늘 세탁물 전달 전체 완료했습니다. (총 ${count}곳: ${names})`;
   (async ()=>{
     try{
-      if(navigator.share){
+      if(copyMode()){
+        await copyOnly(message);
+      } else if(navigator.share){
         await navigator.share({ text: message });
       } else {
         alert('이 브라우저에서는 자동 공유가 안 돼. 아래 문구를 복사해서 직접 보내줘.\n\n' + message);
