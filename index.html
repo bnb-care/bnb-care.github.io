@@ -300,6 +300,10 @@
   }
   .notes-edit:focus{border-color:var(--ink-soft);outline:none;background:var(--surface);}
   .pw-icon{font-size:14px;flex-shrink:0;}
+  .pw-pair{display:flex;gap:6px;flex:1;min-width:0;}
+  .pw-half{flex:1;min-width:0;display:flex;align-items:center;gap:4px;}
+  .pw-half b{font-size:11px;color:var(--ink-soft);flex-shrink:0;}
+  .pw-half input{min-width:0;width:100%;}
   .pw-edit{
     flex:1;font-family:var(--mono);font-size:13px;background:var(--clay-soft);color:var(--clay);
     border:1px solid transparent;border-radius:6px;padding:7px 10px;letter-spacing:0.3px;
@@ -490,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-15';
+const APP_BUILD = '1102-17';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -708,6 +712,24 @@ async function findPrevScheduleDate(pid, ds){
     try{ const rec = JSON.parse(res.value); if((rec.propertyIds||[]).includes(pid)) found = k; }catch(e){}
   }
   _prevDateCache[key] = found; return found;
+}
+// 앞 일정들의 OUT 비번 → 오늘 IN 비번으로 자동 적용 (숙소별 가장 최근 OUT, 최근 62일)
+const _prevOutAll = {};
+function autoInFor(pid, ds){ const m = _prevOutAll[ds||state.selectedDate]; return (m && m[pid] && m[pid].code) || ''; }
+async function loadPrevOuts(ds){
+  if(_prevOutAll[ds]) return _prevOutAll[ds];
+  let keys = [];
+  try{ const res = await window.storage.list('today:', false); keys = (res && res.keys) || []; }catch(e){}
+  const dates = keys.map(k=>k.replace('today:','')).filter(d=> d < ds).sort().reverse().slice(0,62);
+  const recs = await Promise.all(dates.map(async d=>{ try{ const x = await window.storage.get('today:'+d, false); return { d, rec: x && x.value ? JSON.parse(x.value) : null }; }catch(e){ return { d, rec:null }; } }));
+  const map = {};
+  recs.forEach(({d,rec})=>{ if(!rec || !rec.dayPassOut) return; Object.keys(rec.dayPassOut).forEach(pid=>{ const c = String(rec.dayPassOut[pid]||'').trim(); if(c && (rec.propertyIds||[]).includes(pid) && !map[pid]) map[pid] = { ds:d, code:c }; }); });
+  _prevOutAll[ds] = map; return map;
+}
+async function prefetchPrevOuts(){
+  const ds = state.selectedDate; if(!ds || _prevOutAll[ds]) return;
+  await loadPrevOuts(ds);
+  if(ds === state.selectedDate) render();
 }
 async function fillPassSuggestions(){
   const els = document.querySelectorAll('[data-pass-suggest]');
@@ -967,7 +989,7 @@ function getSent(){ try{ return JSON.parse(localStorage.getItem(sentKey())||'{}'
 function staffSig(stId){
   const r = state.todayRecord; if(!r) return '';
   const ids = staffAssignedProps(stId).slice().sort();
-  return ids.map(id=> id+':'+(((r.dayNotes||{})[id])||'')+((r.priorityIds||[]).includes(id)?'*':'')+'#'+(((r.dayPass||{})[id])||'')).join('|');
+  return ids.map(id=> id+':'+(((r.dayNotes||{})[id])||'')+((r.priorityIds||[]).includes(id)?'*':'')+'#'+(((r.dayPass||{})[id])||'')+'>'+(((r.dayPassOut||{})[id])||'')).join('|');
 }
 function markSent(stId){ const m = getSent(); m[stId] = {t:Date.now(), sig:staffSig(stId)}; try{ localStorage.setItem(sentKey(), JSON.stringify(m)); }catch(e){} }
 // none / ok / changed
@@ -1532,10 +1554,11 @@ function openNoticeSheet(){
 }
 function buildPwOnlyText(st){
   const r = state.todayRecord; const ids = staffAssignedProps(st.id);
-  const rows = ids.map((id,i)=>({id,i})).filter(x=> ((r.dayPass||{})[x.id]||'').trim());
+  const inOf = id=> (((r.dayPass||{})[id]||'').trim() || autoInFor(id));
+  const rows = ids.map((id,i)=>({id,i})).filter(x=> inOf(x.id));
   if(!rows.length) return '입력된 오늘 비번이 없어. 오늘 탭 숙소 카드에서 먼저 입력해줘.';
   const lines = [`${renderDateLabel()} ${st.name}님 비번 안내`, ''];
-  rows.forEach(x=>{ const p = propById(x.id); lines.push(`${x.i+1}. ${p?p.name:''} | ${r.dayPass[x.id].trim()}`); });
+  rows.forEach(x=>{ const p = propById(x.id); lines.push(`${x.i+1}. ${p?p.name:''} | ${inOf(x.id)}`); });
   return lines.join('\n');
 }
 function buildPersonalText(st, withPw, withAddr, greet){
@@ -1552,9 +1575,11 @@ function buildPersonalText(st, withPw, withAddr, greet){
     const isPri = (r.priorityIds||[]).includes(id) && !/당일/.test(note||'');
     lines.push('');
     if(i>0){ lines.push(bar); lines.push(''); }
-    const dayPw = ((r.dayPass||{})[id]||'').trim();
+    const dayPw = (((r.dayPass||{})[id]||'').trim() || autoInFor(id));
     const pwTxt = dayPw ? dayPw : (/매번\s*(바뀜|바뀌|변경)/.test(p.password||'') ? '비번 추후 전달' : (p.password||''));
     lines.push(`${i+1}. ${p.name}${(withPw && pwTxt) ? ' | '+pwTxt : ''}`);
+    const outPw = ((r.dayPassOut||{})[id]||'').trim();
+    if(withPw && outPw){ lines.push(''); lines.push(`- 퇴실 시 비번 변경: ${outPw}`); }
     if((withAddr && p.address) || note || isPri) lines.push('');
     if(withAddr && p.address) lines.push(`- ${p.address}`);
     if(isPri) lines.push('- 당일 체크인');
@@ -2191,6 +2216,7 @@ async function moveProperty(id){
   if(cur.assign) delete cur.assign[id];
   if(cur.dayNotes) delete cur.dayNotes[id];
   if(cur.dayPass) delete cur.dayPass[id];
+  if(cur.dayPassOut) delete cur.dayPassOut[id];
   state.todayRecord = cur;
   await saveTodayRecord();
   render();
@@ -2207,6 +2233,7 @@ async function removeJobFromToday(id){
   if(cur.assign) delete cur.assign[id];
   if(cur.dayNotes) delete cur.dayNotes[id];
   if(cur.dayPass) delete cur.dayPass[id];
+  if(cur.dayPassOut) delete cur.dayPassOut[id];
   state.openJobIds.delete(id);
   await saveTodayRecord();
   render();
@@ -2419,6 +2446,7 @@ function openImportSheet(){
     if(rec.assign) delete rec.assign[pid];
     if(rec.dayNotes) delete rec.dayNotes[pid];
     if(rec.dayPass) delete rec.dayPass[pid];
+    if(rec.dayPassOut) delete rec.dayPassOut[pid];
     try{
       if(!rec.propertyIds.length && !(rec.excludedIds||[]).length){ await window.storage.delete('today:'+ds, false); }
       else await window.storage.set('today:'+ds, JSON.stringify(rec), false);
@@ -3499,7 +3527,7 @@ function renderScheduleCards(){
     const warns = warningsFor(assignedSt, p);
     const dayNote = (state.todayRecord.dayNotes||{})[id] || '';
     const dayPassVal = (state.todayRecord.dayPass||{})[id] || '';
-    if(/매번/.test(p.password||'') && !dayPassVal && assignedSt) warns.push('오늘 비번 미입력 (직원에게 "비번 추후 전달"로 나가고 있어)');
+    if(/매번/.test(p.password||'') && !dayPassVal && !autoInFor(id) && assignedSt) warns.push('오늘 비번 미입력 (직원에게 "비번 추후 전달"로 나가고 있어)');
     const assignOpts = `<option value="">작업자 미배정</option>` + state.staff.filter(st=>!st.inactive||(assignedSt&&assignedSt.id===st.id)).map(st=>`<option value="${st.id}" ${assignedSt&&assignedSt.id===st.id?'selected':''}>${esc(st.name)}${staffUnavailable(st)?' ('+offLabel(st)+')':''}</option>`).join('');
     const taskRows = tasks.map((t,idx)=>`
       <div class="task-item ${t.done?'done':''}">
@@ -3537,14 +3565,19 @@ function renderScheduleCards(){
             <div class="meta-sub"><span>OUT ${esc(p.out)} · IN ${esc(p.in)}${p.rooms ? ` · 룸/화장실 ${esc(p.rooms)}` : ''}${p.beds ? ` · ${esc(p.beds)}` : ''}</span></div>
           </div>
           <!-- 날짜 이동 버튼: 지금은 안 써서 숨김 (필요하면 <button class="priority-toggle" data-move-date="${id}">📅 날짜 이동</button> 다시 추가) -->
-          ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? `<div class="pw-row">
+          ${(()=>{
+            const isMb = /^망원(동)?\s*2룸/.test(p.name||'');
+            const auto = autoInFor(id);
+            const outVal = ((state.todayRecord.dayPassOut||{})[id])||'';
+            const inVal = dayPassVal || auto || (/매번/.test(p.password||'') ? '' : (p.password||''));
+            return `<div class="pw-row">
             <span class="pw-icon">🔑</span>
-            <input class="pw-edit" data-day-pass="${id}" value="${esc(dayPassVal)}" placeholder="${/^망원(동)?\s*2룸/.test(p.name||'') ? '앞 손님 체크인 날짜 (예: 1015*)' : '오늘 비번 (체크아웃) — 대표 문자 받으면 입력'}">
-          </div>${/^망원(동)?\s*2룸/.test(p.name||'') ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}` : ''}
-          ${(/매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||'') || dayPassVal) ? '' : `<div class="pw-row">
-            <span class="pw-icon">🔑</span>
-            <input class="pw-edit" data-pw-edit="${id}" value="${esc(p.password)}" placeholder="비밀번호 없음">
-          </div>`}
+            <div class="pw-pair">
+              <label class="pw-half"><b>IN</b><input class="pw-edit" data-day-in="${id}" value="${esc(inVal)}" placeholder="${isMb ? '앞 손님 체크인 날짜 (1015*)' : (/매번/.test(p.password||'') ? '오늘 비번' : '없음')}"></label>
+              <label class="pw-half"><b>OUT</b><input class="pw-edit" data-day-pass-out="${id}" value="${esc(outVal)}" placeholder="바꿀 비번"></label>
+            </div>
+          </div>${(!dayPassVal && auto) ? `<div style="font-size:12px;color:var(--ink-soft);margin:-2px 0 6px 26px;">IN은 앞 일정 OUT 비번이 자동으로 들어왔어</div>` : ''}${isMb ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}`;
+          })()}
           <div class="notes-row">
             <span class="pw-icon">📋</span>
             <textarea class="notes-edit" data-notes-edit="${id}" placeholder="참고사항 없음">${esc(p.notes)}</textarea>
@@ -3932,6 +3965,7 @@ function openEditSheet(prop){
       alwaysPriority: document.getElementById('f_alwaysPriority').checked,
       cleanMin: parseInt(document.getElementById('f_cleanMin').value,10) || 0,
       pickupOnly: e.pickupOnly,
+      dailyPass: !!e.dailyPass,
       noTasks: e.noTasks||[],
     };
     if(!vals.name){ alert('상호명은 필수야.'); return; }
@@ -4349,6 +4383,26 @@ function attachHandlers(){
     el.onchange = ()=> setWorkOrder(el.dataset.workOrder, +el.value);
   });
   fillPassSuggestions();
+  prefetchPrevOuts();
+  document.querySelectorAll('[data-day-in]').forEach(el=>{
+    el.onchange = async ()=>{
+      const id = el.dataset.dayIn; const v = el.value.trim();
+      const r = state.todayRecord; r.dayPass = r.dayPass || {};
+      const p = propById(id); if(!p) return;
+      const dynamic = !!(r.dayPass[id] || autoInFor(id) || /매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||''));
+      if(dynamic){ if(v) r.dayPass[id] = v; else delete r.dayPass[id]; await saveTodayRecord(); render(); }
+      else { const idx = state.properties.findIndex(x=>x.id===id); if(idx>=0){ state.properties[idx] = { ...state.properties[idx], password: v }; await saveProperties(); } }
+    };
+  });
+  document.querySelectorAll('[data-day-pass-out]').forEach(el=>{
+    el.onchange = async ()=>{
+      const r = state.todayRecord; r.dayPassOut = r.dayPassOut || {};
+      const v = el.value.trim();
+      if(v) r.dayPassOut[el.dataset.dayPassOut] = v; else delete r.dayPassOut[el.dataset.dayPassOut];
+      Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]);
+      await saveTodayRecord(); render();
+    };
+  });
   document.querySelectorAll('[data-day-pass]').forEach(el=>{
     el.onchange = async ()=>{
       const r = state.todayRecord; r.dayPass = r.dayPass || {};
@@ -4406,7 +4460,7 @@ function attachHandlers(){
           rec.propertyIds = (rec.propertyIds||[]).filter(id=>id!==p.id);
           if(rec.tasks) delete rec.tasks[p.id];
           rec.priorityIds = (rec.priorityIds||[]).filter(id=>id!==p.id);
-          ['assign','dayNotes','dayPass'].forEach(k=>{ if(rec[k]) delete rec[k][p.id]; });
+          ['assign','dayNotes','dayPass','dayPassOut'].forEach(k=>{ if(rec[k]) delete rec[k][p.id]; });
           if(!rec.propertyIds.length && !(rec.excludedIds||[]).length) await window.storage.delete('today:'+ds, false);
           else await window.storage.set('today:'+ds, JSON.stringify(rec), false);
         }catch(e){}
@@ -4870,7 +4924,7 @@ async function applyEditToday(){
   // 다시 추가된 곳은 "제외됨" 목록에서 빠짐
   const excludedIds = [...existingExcluded.filter(e => !finalIds.includes(e.id)), ...newlyExcluded];
   state.todayRecord = { propertyIds: finalIds, tasks, priorityIds: Array.from(state.pickerPriority), excludedIds,
-    assign: state.todayRecord.assign || {}, dayNotes: state.todayRecord.dayNotes || {}, dayPass: state.todayRecord.dayPass || {} };
+    assign: state.todayRecord.assign || {}, dayNotes: state.todayRecord.dayNotes || {}, dayPass: state.todayRecord.dayPass || {}, dayPassOut: state.todayRecord.dayPassOut || {} };
   closeEditToday();
   await saveTodayRecord();
   render();
