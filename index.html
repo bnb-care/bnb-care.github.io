@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-21';
+const APP_BUILD = '1102-22';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -884,6 +884,7 @@ function openAssignSheet(){
 }
 function openStaffEditSheet(st){
   const cur = st || { id:'st_'+Date.now(), name:'', phone:'', days:[0,1,2,3,4,5,6], endTime:'', forbidden:[], onRequest:false };
+  window._showPastOff = false;
   let offs = (cur.offDates||[]).slice();
   const root = document.createElement('div');
   root.className='overlay'; root.id='overlay2';
@@ -917,7 +918,12 @@ function openStaffEditSheet(st){
   const drawOffs = ()=>{
     offs = Array.from(new Set(offs)).sort();
     const today = todayStr();
-    document.getElementById('sf_offlist').innerHTML = offs.filter(d=>d>=today).length || offs.length ? offs.map(d=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;border:1px solid var(--paper-line);font-size:13px;${d<today?'opacity:.5;':''}">${fmtOff(d)}<button type="button" data-off-del="${d}" style="border:0;background:none;font-size:14px;padding:0 2px;color:var(--ink-soft);">✕</button></span>`).join('') : '<span style="font-size:12px;color:var(--ink-soft);">등록된 휴무일 없음</span>';
+    const upcoming = offs.filter(d=>d>=today), past = offs.filter(d=>d<today);
+    const chip = d=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;border:1px solid var(--paper-line);font-size:13px;${d<today?'opacity:.55;':''}">${fmtOff(d)}<button type="button" data-off-del="${d}" style="border:0;background:none;font-size:14px;padding:0 2px;color:var(--ink-soft);">✕</button></span>`;
+    document.getElementById('sf_offlist').innerHTML = (upcoming.length ? upcoming.map(chip).join('') : '<span style="font-size:12px;color:var(--ink-soft);">앞으로 휴무일 없음</span>')
+      + (past.length ? `<button type="button" id="sf_pastbtn" style="border:0;background:none;font-size:12px;color:var(--ink-soft);text-decoration:underline;padding:3px 4px;">지난 휴무 ${past.length}일 ${window._showPastOff?'접기':'보기'}</button>` : '')
+      + (window._showPastOff ? past.slice().reverse().map(chip).join('') : '');
+    const pb = document.getElementById('sf_pastbtn'); if(pb) pb.onclick = ()=>{ window._showPastOff = !window._showPastOff; drawOffs(); };
     document.getElementById('sf_offlist').querySelectorAll('[data-off-del]').forEach(b=> b.onclick = ()=>{ offs = offs.filter(x=>x!==b.dataset.offDel); drawOffs(); });
   };
   drawOffs();
