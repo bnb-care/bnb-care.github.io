@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-25';
+const APP_BUILD = '1102-26';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -943,6 +943,7 @@ function openStaffEditSheet(st){
   document.getElementById('sf_save').onclick = async ()=>{
     const name = document.getElementById('sf_name').value.trim();
     if(!name){ alert('이름을 입력해줘.'); return; }
+    if(document.getElementById('sf_off1').value) document.getElementById('sf_offadd').onclick(); // 날짜만 고르고 추가를 안 눌러도 같이 저장
     const days = Array.from(root.querySelectorAll('.sf_day')).filter(c=>c.checked).map(c=>Number(c.value));
     const obj = { id:cur.id, inactive:!!cur.inactive, role:(document.getElementById('sf_mgr').checked?'manager':''), name, phone:document.getElementById('sf_phone').value.trim(), days,
       endTime:document.getElementById('sf_end').value.trim(),
