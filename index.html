@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-24';
+const APP_BUILD = '1102-25';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -810,8 +810,8 @@ function selectedWeekday(){
   return new Date(y,m-1,d).getDay();
 }
 function offLabel(st){ return staffOffToday(st) ? '휴무' : (st.onRequest ? '연락 시' : '불가'); }
-function offNamesOn(ds){ return activeStaff().filter(st=>(st.offDates||[]).includes(ds)).map(st=>{ const n=st.name||''; return /^[가-힣]{3}$/.test(n) ? n.slice(1) : n; }); }
-function offFullNames(ds){ return activeStaff().filter(st=>(st.offDates||[]).includes(ds)).map(st=>st.name); }
+function offNamesOn(ds){ return activeStaff().filter(st=>st.role==='manager' && (st.offDates||[]).includes(ds)).map(st=>{ const n=st.name||''; return /^[가-힣]{3}$/.test(n) ? n.slice(1) : n; }); }
+function offFullNames(ds){ return activeStaff().filter(st=>st.role==='manager' && (st.offDates||[]).includes(ds)).map(st=>st.name); }
 function offLineHtml(ds){ const a = offFullNames(ds); return a.length ? `<div class="off-line" style="margin:6px 0;padding:6px 10px;border-radius:8px;background:#FBF1D6;color:#8a6d1f;font-size:13px;font-weight:600;">🌴 휴무: ${esc(a.join(', '))}</div>` : ''; }
 function offNamesHtml(ds){ const a = offNamesOn(ds); return a.length ? `<span class="off" title="휴무: ${esc(a.join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; }
 function staffOffToday(st){ return (st.offDates||[]).includes(state.selectedDate); }
