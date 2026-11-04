@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-27';
+const APP_BUILD = '1102-28';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -679,11 +679,25 @@ async function ensureSeedProps(){
     if(!Array.isArray(list)) return;
     const need = SEED_STAYWITH.filter(r=> !list.some(p=> /스테이\s*위드/.test(p.name||'') && String(p.name).includes(r)));
     if(need.length){
-      need.forEach((r,i)=> list.push({ id:'p'+(Date.now()+i), name:'스테이위드 '+r, owner:'', phone:'', address:'', password:'', out:'', in:'', rooms:'', beds:'', notes:'', parkingUrl:'', parkingId:'', parkingPw:'', alwaysPriority:false }));
+      need.forEach((r,i)=> list.push({ id:'p'+(Date.now()+i), name:'스테이위드 '+r, noTasks:['세탁 완료','세탁물 전달'], owner:'', phone:'', address:'', password:'', out:'', in:'', rooms:'', beds:'', notes:'', parkingUrl:'', parkingId:'', parkingPw:'', alwaysPriority:false }));
       await window.storage.set(KEY_PROPS, JSON.stringify(list), false);
       state.properties = list; render();
     }
     localStorage.setItem('seed:staywith1','1');
+  }catch(e){}
+}
+// 스테이위드는 세탁·전달을 안 하므로 한 번만 전부 꺼 두고, 이미 만든 오늘 이후 일정에서도 뺌
+async function ensureStaywithNoTasks(){
+  try{
+    if(!(cloud && cloud.user && isAdmin())) return;
+    if(localStorage.getItem('seed:staywith2')==='1') return;
+    const targets = state.properties.filter(p=>/^스테이\s*위드/.test(p.name||''));
+    if(!targets.length) return;
+    const OFF = ['세탁 완료','세탁물 전달'];
+    targets.forEach(p=>{ p.noTasks = Array.from(new Set([...(p.noTasks||[]), ...OFF])); });
+    await saveProperties();
+    for(const p of targets){ try{ await applyPropToFuture(p.id); }catch(e){} }
+    localStorage.setItem('seed:staywith2','1'); render();
   }catch(e){}
 }
 async function loadProperties(){
@@ -773,8 +787,9 @@ function ensureLaundryStep(rec, ds){
     (rec.propertyIds||[]).forEach(id=>{
       const arr = rec.tasks[id]; if(!arr) return;
       const pp = (typeof propById==='function') ? propById(id) : null;
+      if(pp && (pp.noTasks||[]).length) rec.tasks[id] = arr.filter(t=> t.done || !pp.noTasks.includes(t.text));
       if(pp && (pp.noTasks||[]).includes('세탁 완료')) return;
-      if(!arr.some(t=>t.text==='세탁 완료')) arr.unshift({text:'세탁 완료', done:false});
+      if(!rec.tasks[id].some(t=>t.text==='세탁 완료')) rec.tasks[id].unshift({text:'세탁 완료', done:false});
     });
   }catch(e){}
   return rec;
@@ -5190,7 +5205,8 @@ async function startApp(){
   if(state.tab === 'staff' || state.tab === 'map') render();
   cleanupOldDayPass();
   if(cloud) watchShared();
-  ensureSeedProps();
+  await ensureSeedProps();
+  ensureStaywithNoTasks();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
   if(cloud && isAdmin() && state.properties.length === 0 && localStorage.getItem(KEY_PROPS)){
     if(confirm('서버에 숙소 데이터가 아직 없어. 이 폰에 저장된 데이터를 서버로 올릴까?')) await uploadLocalData();
