@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-29';
+const APP_BUILD = '1102-30';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -784,12 +784,17 @@ function ensureLaundryStep(rec, ds){
   try{
     ds = ds || state.selectedDate;
     if(!rec || !rec.tasks || ds < todayStr()) return rec;
+    const ALL = ['세탁 완료','세탁물 전달','컨디션 체크'];
     (rec.propertyIds||[]).forEach(id=>{
-      const arr = rec.tasks[id]; if(!arr) return;
+      if(!rec.tasks[id]) return;
       const pp = (typeof propById==='function') ? propById(id) : null;
-      if(pp && (pp.noTasks||[]).length) rec.tasks[id] = arr.filter(t=> t.done || !pp.noTasks.includes(t.text));
-      if(pp && (pp.noTasks||[]).includes('세탁 완료')) return;
-      if(!rec.tasks[id].some(t=>t.text==='세탁 완료')) rec.tasks[id].unshift({text:'세탁 완료', done:false});
+      if(!pp) return;
+      // 숙소 설정(켜진 체크 항목)과 맞추기: 꺼진 항목(체크 안 한 것)은 빼고, 빠진 항목은 채움
+      const want = tasksForProperty(pp);
+      let arr = rec.tasks[id].filter(t=> t.done || !ALL.includes(t.text) || want.includes(t.text));
+      want.forEach(t=>{ if(!arr.some(x=>x.text===t)) arr.push({text:t, done:false}); });
+      arr.sort((x,y)=> (ALL.indexOf(x.text)<0?9:ALL.indexOf(x.text)) - (ALL.indexOf(y.text)<0?9:ALL.indexOf(y.text)));
+      rec.tasks[id] = arr;
     });
   }catch(e){}
   return rec;
