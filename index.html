@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-32';
+const APP_BUILD = '1102-33';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -2092,7 +2092,7 @@ function chipsFor(rec, ds){
   }).filter(Boolean).sort((x,y)=> (y.pri-x.pri) || cmpByColor(x.p, y.p));
 }
 function washBtn(ds, c){
-  if(c.wash===null && ds < todayStr()) return '';
+  if(c.wash===null) return ''; // 세탁 항목이 없는 숙소(컨디션만 체크 등)는 🧺 버튼을 숨김
   return `<button class="wash-btn ${c.wash?'on':''}" data-wash="${ds}:${c.id}" title="${c.wash?'세탁 완료 (누르면 해제)':'세탁 완료 체크'}">🧺${c.wash?' ✓':''}</button>`;
 }
 function washCount(chips){
