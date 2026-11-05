@@ -494,7 +494,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-30';
+const APP_BUILD = '1102-31';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -790,7 +790,7 @@ function ensureLaundryStep(rec, ds){
       const pp = (typeof propById==='function') ? propById(id) : null;
       if(!pp) return;
       // 숙소 설정(켜진 체크 항목)과 맞추기: 꺼진 항목(체크 안 한 것)은 빼고, 빠진 항목은 채움
-      const want = tasksForProperty(pp);
+      const offD = offForDay(rec, id); const want = ALL.filter(t=>!offD.includes(t));
       let arr = rec.tasks[id].filter(t=> t.done || !ALL.includes(t.text) || want.includes(t.text));
       want.forEach(t=>{ if(!arr.some(x=>x.text===t)) arr.push({text:t, done:false}); });
       arr.sort((x,y)=> (ALL.indexOf(x.text)<0?9:ALL.indexOf(x.text)) - (ALL.indexOf(y.text)<0?9:ALL.indexOf(y.text)));
@@ -3471,6 +3471,12 @@ function taskIcon(text){
   if(text.includes('컨디션') || text.includes('사진')) return '✅';
   return '✓';
 }
+// 그날만 따로 꺼 둔 체크 항목(rec.noTasksDay[pid])이 있으면 그걸, 없으면 숙소 기본 설정(p.noTasks)을 씀
+function offForDay(rec, pid){
+  const ov = rec && rec.noTasksDay && rec.noTasksDay[pid];
+  if(Array.isArray(ov)) return ov;
+  const p = propById(pid); return (p && p.noTasks) || [];
+}
 function tasksForProperty(p){
   // 체크리스트는 고정 2항목. 참고사항은 별도로 그냥 텍스트로만 보여줌.
   const off = (p && p.noTasks) || [];
@@ -3676,7 +3682,7 @@ function renderScheduleCards(){
     `).join('');
     const conditionTask = tasks.find(t=>t.text.includes('컨디션') || t.text.includes('사진'));
     const conditionDone = conditionTask ? conditionTask.done : false;
-    const missingTasks = ['세탁 완료','세탁물 전달','컨디션 체크'].filter(txt => !tasks.some(t=>t.text===txt) && !(p.noTasks||[]).includes(txt));
+    const missingTasks = ['세탁 완료','세탁물 전달','컨디션 체크'].filter(txt => !tasks.some(t=>t.text===txt) && !offForDay(state.todayRecord, id).includes(txt));
     const missingRow = (isAdmin() && missingTasks.length) ? `
       <div class="task-missing-row">
         ${missingTasks.map(txt=>`<button class="task-add-back" data-add-task="${id}:${txt}">+ ${esc(txt)}</button>`).join('')}
@@ -3739,9 +3745,10 @@ function renderScheduleCards(){
           ${isAdmin() ? missingRow : ''}
           ${isAdmin() && state.psOpen && state.psOpen.has(id) ? `<div class="prop-set-row">
             <div class="ps-chips">
-              ${[['세탁 완료','🧺'],['세탁물 전달','🚚'],['컨디션 체크','✅']].map(([t,e])=>`<button class="ps-chip ${(p.noTasks||[]).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}" title="${t}">${e}</button>`).join('')}
-              <button class="ps-chip ${isPickupOnly(p)?'on':''}" data-ps-pickup="${esc(id)}" title="세탁물 수거만 (순서 제외)">📦</button>
-            </div></div>` : ''}
+              ${[['세탁 완료','🧺'],['세탁물 전달','🚚'],['컨디션 체크','✅']].map(([t,e])=>`<button class="ps-chip ${offForDay(state.todayRecord,id).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}" title="${t} (이 날짜만)">${e}</button>`).join('')}
+              <button class="ps-chip ${isPickupOnly(p)?'on':''}" data-ps-pickup="${esc(id)}" title="세탁물 수거만 (순서 제외) · 숙소 전체 적용">📦</button>
+              <button class="ps-chip" data-ps-default="${esc(id)}" title="지금 설정을 이 숙소의 기본값으로 (이후 모든 일정)">📌</button>
+            </div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">🧺🚚✅는 이 날짜만 바뀌어 · 📌은 지금 설정을 이 숙소 기본값으로 (이후 일정 전부)</div></div>` : ''}
           ${isAdmin() ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;"><button data-ps-toggle="${id}" title="이 숙소 설정" aria-label="이 숙소 설정" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:${state.psOpen&&state.psOpen.has(id)?1:.55};cursor:pointer;">⚙️</button><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
         </div>
       </div>
@@ -4123,7 +4130,7 @@ function openEditSheet(prop){
 }
 
 // 숙소 설정(항상 당일·체크할 항목)을 오늘 이후에 이미 만들어 둔 일정에도 반영
-async function applyPropToFuture(pid){
+async function applyPropToFuture(pid, clearOverride){
   const p = propById(pid); if(!p) return 0;
   let keys = [];
   try{ const res = await window.storage.list('today:', false); keys = (res && res.keys) || []; }catch(e){}
@@ -4134,15 +4141,18 @@ async function applyPropToFuture(pid){
     let rec = null;
     try{ const x = await window.storage.get('today:'+ds, false); if(!x || !x.value) continue; rec = JSON.parse(x.value); }catch(e){ continue; }
     if(!(rec.propertyIds||[]).includes(pid)) continue;
-    const before = JSON.stringify([rec.priorityIds||[], (rec.tasks||{})[pid]||[]]);
+    const before = JSON.stringify([rec.priorityIds||[], (rec.tasks||{})[pid]||[], rec.noTasksDay||null]);
+    if(clearOverride && rec.noTasksDay){ delete rec.noTasksDay[pid]; if(!Object.keys(rec.noTasksDay).length) delete rec.noTasksDay; }
+    const dayOv = rec.noTasksDay && Array.isArray(rec.noTasksDay[pid]);
     rec.priorityIds = rec.priorityIds || [];
     if(p.alwaysPriority && !rec.priorityIds.includes(pid)) rec.priorityIds.push(pid);
     rec.tasks = rec.tasks || {};
-    let next = (rec.tasks[pid]||[]).filter(t=> !ALL.includes(t.text) || want.includes(t.text) || t.done);
-    want.forEach(t=>{ if(!next.some(x=>x.text===t)) next.push({text:t, done:false}); });
+    let next = (rec.tasks[pid]||[]);
+    if(!dayOv){ next = next.filter(t=> !ALL.includes(t.text) || want.includes(t.text) || t.done);
+      want.forEach(t=>{ if(!next.some(x=>x.text===t)) next.push({text:t, done:false}); }); }
     next.sort((a,b)=> (ALL.indexOf(a.text)<0?9:ALL.indexOf(a.text)) - (ALL.indexOf(b.text)<0?9:ALL.indexOf(b.text)));
     rec.tasks[pid] = next;
-    if(JSON.stringify([rec.priorityIds, next]) === before) continue;
+    if(JSON.stringify([rec.priorityIds, next, rec.noTasksDay||null]) === before) continue;
     try{ await window.storage.set('today:'+ds, JSON.stringify(rec), false); n++; }catch(e){}
   }
   if(n && state.selectedDate) await loadTodayRecord();
@@ -4557,7 +4567,26 @@ function attachHandlers(){
     try{ await applyPropToFuture(pid); }catch(e){}
     render();
   };
-  document.querySelectorAll('[data-ps-task]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const [pid,t] = el.dataset.psTask.split('|'); const p = propById(pid); if(!p) return; const cur = (p.noTasks||[]); psSave(pid, { noTasks: cur.includes(t) ? cur.filter(x=>x!==t) : cur.concat([t]) }); });
+  document.querySelectorAll('[data-ps-task]').forEach(el=> el.onclick = async (ev)=>{
+    ev.stopPropagation(); const [pid,t] = el.dataset.psTask.split('|'); const r = state.todayRecord; if(!r || !propById(pid)) return;
+    const ALL = ['세탁 완료','세탁물 전달','컨디션 체크'];
+    const cur = offForDay(r, pid).slice(); const nowOff = !cur.includes(t);
+    const off = nowOff ? cur.concat([t]) : cur.filter(x=>x!==t);
+    r.noTasksDay = r.noTasksDay || {}; r.noTasksDay[pid] = off;
+    let arr = (r.tasks[pid]||[]).filter(x=> !(nowOff && x.text===t && !x.done));
+    if(!nowOff && !arr.some(x=>x.text===t)) arr.push({text:t, done:false});
+    arr.sort((x,y)=> (ALL.indexOf(x.text)<0?9:ALL.indexOf(x.text)) - (ALL.indexOf(y.text)<0?9:ALL.indexOf(y.text)));
+    r.tasks[pid] = arr; render(); await saveTodayRecord(); render();
+  });
+  document.querySelectorAll('[data-ps-default]').forEach(el=> el.onclick = async (ev)=>{
+    ev.stopPropagation(); const pid = el.dataset.psDefault; const r = state.todayRecord; const p = propById(pid); if(!p || !r) return;
+    if(!confirm('지금 설정을 "'+p.name+'" 기본값으로 저장할까?\n오늘 이후 이 숙소 일정이 전부 이 설정으로 바뀌어.')) return;
+    const off = offForDay(r, pid).slice();
+    const i = state.properties.findIndex(x=>x.id===pid); state.properties[i] = { ...state.properties[i], noTasks: off };
+    if(r.noTasksDay){ delete r.noTasksDay[pid]; if(!Object.keys(r.noTasksDay).length) delete r.noTasksDay; }
+    render(); await saveProperties(); await saveTodayRecord();
+    try{ await applyPropToFuture(pid, true); }catch(e){} render();
+  });
   document.querySelectorAll('[data-ps-pickup]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPickup); if(p) psSave(p.id, { pickupOnly: !isPickupOnly(p) }); });
   document.querySelectorAll('[data-ps-pri]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPri); if(p) psSave(p.id, { alwaysPriority: !p.alwaysPriority }); });
   document.querySelectorAll('[data-daynote]').forEach(el=>{
@@ -5061,7 +5090,7 @@ async function applyEditToday(){
   // 다시 추가된 곳은 "제외됨" 목록에서 빠짐
   const excludedIds = [...existingExcluded.filter(e => !finalIds.includes(e.id)), ...newlyExcluded];
   state.todayRecord = { propertyIds: finalIds, tasks, priorityIds: Array.from(state.pickerPriority), excludedIds,
-    assign: state.todayRecord.assign || {}, dayNotes: state.todayRecord.dayNotes || {}, dayPass: state.todayRecord.dayPass || {}, dayPassOut: state.todayRecord.dayPassOut || {} };
+    assign: state.todayRecord.assign || {}, dayNotes: state.todayRecord.dayNotes || {}, dayPass: state.todayRecord.dayPass || {}, dayPassOut: state.todayRecord.dayPassOut || {}, noTasksDay: state.todayRecord.noTasksDay || {} };
   closeEditToday();
   await saveTodayRecord();
   render();
