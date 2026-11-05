@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-35';
+const APP_BUILD = '1102-36';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -4716,7 +4716,7 @@ function attachHandlers(){
 }
 
 function togglePick(id){
-  if(state.pickerSelection.has(id)) state.pickerSelection.delete(id);
+  if(state.pickerSelection.has(id)){ state.pickerSelection.delete(id); state.pickerPriority.delete(id); } // 일정 해제하면 당일도 같이 해제
   else state.pickerSelection.add(id);
   render();
 }
