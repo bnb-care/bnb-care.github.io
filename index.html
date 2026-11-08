@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-36';
+const APP_BUILD = '1102-39';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -731,6 +731,7 @@ async function findPrevScheduleDate(pid, ds){
 }
 // 앞 일정들의 OUT 비번 → 오늘 IN 비번으로 자동 적용 (숙소별 가장 최근 OUT, 최근 62일)
 const _prevOutAll = {};
+const _prevInfoAll = {}; // ds → {pid:{ds,done,hasOut}} : 그 숙소의 바로 앞 일정이 완료됐는지/OUT이 있는지
 function autoInFor(pid, ds){ const m = _prevOutAll[ds||state.selectedDate]; return (m && m[pid] && m[pid].code) || ''; }
 async function loadPrevOuts(ds){
   if(_prevOutAll[ds]) return _prevOutAll[ds];
@@ -740,7 +741,19 @@ async function loadPrevOuts(ds){
   const recs = await Promise.all(dates.map(async d=>{ try{ const x = await window.storage.get('today:'+d, false); return { d, rec: x && x.value ? JSON.parse(x.value) : null }; }catch(e){ return { d, rec:null }; } }));
   const map = {};
   recs.forEach(({d,rec})=>{ if(!rec || !rec.dayPassOut) return; Object.keys(rec.dayPassOut).forEach(pid=>{ const c = String(rec.dayPassOut[pid]||'').trim(); if(c && (rec.propertyIds||[]).includes(pid) && !map[pid]) map[pid] = { ds:d, code:c }; }); });
+  const info = {};
+  recs.forEach(({d,rec})=>{ if(!rec) return; (rec.propertyIds||[]).forEach(pid=>{ if(info[pid]) return;
+    const tk = (rec.tasks||{})[pid]; const done = Array.isArray(tk) && (tk.length ? tk.every(t=>t.done) : true);
+    info[pid] = { ds:d, done, hasOut: !!String(((rec.dayPassOut||{})[pid])||'').trim() }; }); });
+  _prevInfoAll[ds] = info;
   _prevOutAll[ds] = map; return map;
+}
+function prevWarnFor(pid, ds){
+  ds = ds || state.selectedDate; if(!ds || ds > todayStr()) return '';
+  const i = (_prevInfoAll[ds]||{})[pid]; if(!i) return '';
+  const bad = []; if(!i.done) bad.push('미완료'); if(!i.hasOut) bad.push('OUT 비번 없음');
+  if(!bad.length) return '';
+  return '⚠️ 앞 일정 '+Number(i.ds.slice(5,7))+'/'+Number(i.ds.slice(8,10))+' '+bad.join(' · ')+' — 비번이 바뀌었는지 확인해줘';
 }
 async function prefetchPrevOuts(){
   const ds = state.selectedDate; if(!ds || _prevOutAll[ds]) return;
@@ -916,8 +929,8 @@ function openStaffEditSheet(st){
       <div class="field"><label>이름</label><input id="sf_name" value="${esc(cur.name)}"></div>
       <div class="field"><label>연락처</label><input id="sf_phone" value="${esc(cur.phone||'')}"></div>
       <div class="field"><label>근무 가능 요일</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${DAY_NAMES.map((n,i)=>`<label style="display:flex;align-items:center;gap:3px;font-size:14px;"><input type="checkbox" class="sf_day" value="${i}" ${(cur.days||[]).includes(i)?'checked':''}>${n}</label>`).join('')}
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          ${DAY_NAMES.map((n,i)=>`<label style="display:flex;align-items:center;gap:4px;font-size:14px;margin:0;color:var(--ink);"><input type="checkbox" class="sf_day" style="width:auto;padding:0;margin:0;flex:none;" value="${i}" ${(cur.days||[]).includes(i)?'checked':''}>${n}</label>`).join('')}
         </div></div>
       <div class="field"><label>근무 종료 제한 (예: 15:30, 없으면 비움)</label><input id="sf_end" value="${esc(cur.endTime||'')}"></div>
       <div class="field"><label>배정 금지 숙소 키워드 (쉼표로 구분)</label><input id="sf_forbid" value="${esc((cur.forbidden||[]).join(','))}"></div>
@@ -1332,7 +1345,7 @@ async function applyOwnerPass(items){
       try{ await window.storage.set('today:'+it.ds, JSON.stringify(rec), false); n++; }catch(e){ msgs.push(`${it.prop.name}: 저장 실패`); }
     }
   }
-  Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]);
+  Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]); Object.keys(_prevInfoAll).forEach(k=>delete _prevInfoAll[k]);
   return { n, msgs };
 }
 function openOwnerPassSheet(items, text){
@@ -2139,6 +2152,7 @@ async function toggleWash(ds, id){
   ensureLaundryStep(rec, ds);
   const t = (rec.tasks[id]||[]).find(x=>x.text==='세탁 완료'); if(!t) return;
   const needCheck = !t.done;
+  Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]); Object.keys(_prevInfoAll).forEach(k=>delete _prevInfoAll[k]);
   t.done = !t.done;
   if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); }
   else { delete t.by; delete t.at; }
@@ -3721,7 +3735,7 @@ function renderScheduleCards(){
               <label class="pw-half"><b>IN</b><input class="pw-edit" data-day-in="${id}" ${isAdmin()?'':'readonly'} value="${esc(inVal)}" placeholder="${isMb ? '앞 손님 체크인 날짜 (1015*)' : (/매번/.test(p.password||'') ? '오늘 비번' : '없음')}"></label>
               <label class="pw-half"><b>OUT</b><input class="pw-edit" data-day-pass-out="${id}" ${isAdmin()?'':'readonly'} value="${esc(outVal)}" placeholder="바꿀 비번"></label>
             </div>
-          </div>${(!dayPassVal && auto) ? `<div style="font-size:12px;color:var(--ink-soft);margin:-2px 0 6px 26px;">IN은 앞 일정 OUT 비번이 자동으로 들어왔어</div>` : ''}${isMb ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}`;
+          </div>${(()=>{ const w = (!dayPassVal && (auto || /매번/.test(p.password||''))) ? prevWarnFor(id) : ''; if(w) return `<div style="font-size:12.5px;font-weight:600;color:var(--clay);margin:-2px 0 6px 26px;">${esc(w)}</div>`; return (!dayPassVal && auto) ? `<div style="font-size:12px;color:var(--ink-soft);margin:-2px 0 6px 26px;">IN은 앞 일정 OUT 비번이 자동으로 들어왔어</div>` : ''; })()}${isMb ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}`;
           })()}
           <div class="notes-row">
             <span class="pw-icon">📋</span>
@@ -4335,6 +4349,7 @@ async function setupMapIfNeeded(){
 }
 
 function attachHandlers(){
+  { const hb=document.getElementById('histBtn'); if(hb) hb.onclick=openHistorySheet; }
   document.querySelectorAll('[data-pick]').forEach(el=>{
     el.onclick = (ev)=>{
       if(ev.target.tagName === 'INPUT' || ev.target.closest('.priority-toggle')) return;
@@ -4413,6 +4428,7 @@ function attachHandlers(){
       const [id, idx] = el.dataset.task.split(':');
       const t = state.todayRecord.tasks[id][Number(idx)];
       const needCheck = !t.done && t.text==='세탁 완료';
+      Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]); Object.keys(_prevInfoAll).forEach(k=>delete _prevInfoAll[k]);
       // 누르자마자 화면부터 바꾸고, 세탁 세트 제한 확인은 뒤에서 (걸리면 되돌림)
       t.done = !t.done;
       if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); }
@@ -4548,7 +4564,7 @@ function attachHandlers(){
       const r = state.todayRecord; r.dayPassOut = r.dayPassOut || {};
       const v = el.value.trim();
       if(v) r.dayPassOut[el.dataset.dayPassOut] = v; else delete r.dayPassOut[el.dataset.dayPassOut];
-      Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]);
+      Object.keys(_prevOutAll).forEach(k=>delete _prevOutAll[k]); Object.keys(_prevInfoAll).forEach(k=>delete _prevInfoAll[k]);
       await saveTodayRecord(); render();
     };
   });
