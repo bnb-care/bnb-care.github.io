@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-52';
+const APP_BUILD = '1102-53';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3806,7 +3806,7 @@ function loadMorningPrev(ds){
   window.storage.get('today:'+pds, false).then(x=>{
     let ids = [];
     try{ if(x && x.value){ const r = JSON.parse(x.value); ids = Object.keys(r.morningCheck||{}).filter(k=>r.morningCheck[k]); } }catch(e){}
-    state.morningPrev = { ds, ids };
+    state.morningPrev = { ds, pds, ids };
     if(ids.length && state.selectedDate === ds && state.tab === 'today') render();
   }).catch(()=>{ state.morningPrev = { ds, ids: [] }; });
 }
@@ -3823,8 +3823,8 @@ function renderMorningBanner(){
   if(!items.length) return '';
   return `<div class="prop-card open" style="margin-bottom:10px;border-color:var(--amber,#E0A100);"><div style="padding:10px 12px;">
     <div style="font-weight:700;font-size:14px;margin-bottom:6px;">🌅 어제 체크 남은 곳 ${items.length}곳</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;">${items.map(x=> x.inToday ? `<span class="pill-btn" style="opacity:.85;">${esc(x.name)} · 오늘 일정에 있음</span>` : `<button class="pill-btn" data-morning-add="${esc(x.id)}">${esc(x.name)} ＋</button>`).join('')}</div>
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">＋를 누르면 오늘 일정에 추가돼. ✅ 체크하면 여기서 빠져.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${items.map(x=> x.inToday ? `<span class="pill-btn" style="opacity:.85;">${esc(x.name)} · 오늘 일정에 있음</span>` : `<button class="pill-btn" data-morning-done="${esc(x.id)}">${esc(x.name)} ✅</button>`).join('')}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">이름을 누르면 어제 일정의 ✅ 체크가 완료로 기록되고 여기서 빠져. 오늘 일정에는 추가되지 않아.</div>
   </div></div>`;
 }
 function renderScheduleCards(){
@@ -4790,7 +4790,18 @@ function attachHandlers(){
     try{ await applyPropToFuture(pid, true); }catch(e){} render();
   });
   document.querySelectorAll('[data-ps-morning]').forEach(el=> el.onclick = async (ev)=>{ ev.stopPropagation(); const r = state.todayRecord; r.morningCheck = r.morningCheck || {}; const k = el.dataset.psMorning; if(r.morningCheck[k]) delete r.morningCheck[k]; else r.morningCheck[k] = true; await saveTodayRecord(); render(); });
-  document.querySelectorAll('[data-morning-add]').forEach(el=> el.onclick = async ()=>{ const id = el.dataset.morningAdd; const p = propById(id); const r = state.todayRecord; if(!p || !r) return; if(!(r.propertyIds||[]).includes(id)){ r.propertyIds.push(id); r.tasks = r.tasks || {}; r.tasks[id] = tasksForProperty(p).map(text=>({text, done:false})); await saveTodayRecord(); } render(); });
+  document.querySelectorAll('[data-morning-done]').forEach(el=> el.onclick = async ()=>{
+    const id = el.dataset.morningDone, mp = state.morningPrev; if(!mp || !mp.pds) return;
+    try{
+      const x = await window.storage.get('today:'+mp.pds, false); if(!x || !x.value) return;
+      const r = JSON.parse(x.value);
+      const tk = ((r.tasks||{})[id]||[]).find(t=>t.text.includes('컨디션'));
+      if(tk && !tk.done){ tk.done = true; tk.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; tk.at = Date.now(); }
+      if(r.morningCheck) delete r.morningCheck[id];
+      await window.storage.set('today:'+mp.pds, JSON.stringify(r), false);
+      mp.ids = mp.ids.filter(k=>k!==id); render();
+    }catch(e){ alert('저장에 실패했어.'); }
+  });
   document.querySelectorAll('[data-ps-next]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const sd = state.selectedDate; const d = new Date(Number(sd.slice(0,4)), Number(sd.slice(5,7))-1, Number(sd.slice(8,10))+1); moveProperty(el.dataset.psNext, d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())); });
   document.querySelectorAll('[data-ps-lobby]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psLobby); if(p) psSave(p.id, { lobbyOn: !lobbyShown(p) }); });
   document.querySelectorAll('[data-ps-inout]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psInout); if(p) psSave(p.id, { inOutOn: !inOutShown(p, p.id) }); });
