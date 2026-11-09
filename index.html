@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-48';
+const APP_BUILD = '1102-50';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -2372,15 +2372,19 @@ function attachCalHandlers(){
 }
 
 
-async function moveProperty(id){
+async function moveProperty(id, forceDs){
   const p = propById(id); const rec = state.todayRecord;
   if(!p || !rec) return;
-  const v = prompt(p.name+' 일정을 어느 날짜로 옮길까? (예: 10/15)');
-  if(!v) return;
-  const m = v.match(/(\d{1,2})\s*[\/\-.월]\s*(\d{1,2})/);
-  if(!m){ alert('날짜를 "10/15" 형식으로 입력해줘.'); return; }
-  const yy = Number(state.selectedDate.slice(0,4));
-  const ds = yy+'-'+pad2(Number(m[1]))+'-'+pad2(Number(m[2]));
+  let m, ds;
+  if(forceDs){ ds = forceDs; m = [null, ds.slice(5,7), ds.slice(8,10)]; }
+  else {
+    const v = prompt(p.name+' 일정을 어느 날짜로 옮길까? (예: 10/15)');
+    if(!v) return;
+    m = v.match(/(\d{1,2})\s*[\/\-.월]\s*(\d{1,2})/);
+    if(!m){ alert('날짜를 "10/15" 형식으로 입력해줘.'); return; }
+    const yy = Number(state.selectedDate.slice(0,4));
+    ds = yy+'-'+pad2(Number(m[1]))+'-'+pad2(Number(m[2]));
+  }
   if(ds === state.selectedDate){ alert('같은 날짜야.'); return; }
   let tgt = null;
   try{ const x = await window.storage.get('today:'+ds, false); if(x && x.value) tgt = JSON.parse(x.value); }catch(e){}
@@ -3481,6 +3485,17 @@ async function openChangeSheet(){
   let log = [];
   for(const k of lks){ try{ const r = await window.storage.get(k, false); if(r && r.value){ const a = JSON.parse(r.value); if(Array.isArray(a)) log = log.concat(a); } }catch(e){} }
   log.sort((x,y)=>y.t-x.t);
+  // 같은 숙소가 몇 초 안에 한 날짜에서 빠지고 다른 날짜에 들어가면 '이동' 한 줄로 합침
+  { const used = new Set(), out = [];
+    log.forEach((e,i)=>{
+      if(used.has(i)) return;
+      if(e.a==='+' || e.a==='-'){
+        const j = log.findIndex((f,k)=> k!==i && !used.has(k) && f.n===e.n && f.a!==e.a && f.d!==e.d && Math.abs(f.t-e.t)<=15000);
+        if(j>=0){ const f = log[j]; const from = e.a==='-' ? e : f, to = e.a==='+' ? e : f; used.add(i); used.add(j); out.push({ t:Math.max(e.t,f.t), u:e.u||f.u, n:e.n, a:'m', from:from.d, d:to.d }); return; }
+      }
+      out.push(e);
+    });
+    log = out; }
   let tab = 'month', openYm = null;
   const md = ds=> Number(ds.slice(5,7))+'/'+Number(ds.slice(8,10));
   const draw = ()=>{
@@ -3503,7 +3518,7 @@ async function openChangeSheet(){
         return `<div data-cm="${ym}" style="padding:8px 0;border-bottom:1px solid var(--line,#eee);cursor:pointer;"><div style="display:flex;justify-content:space-between;align-items:center;"><b>${Number(ym.slice(5))}월${ym===(now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0'))?' <span style="font-size:11px;color:var(--ink-soft);">진행 중</span>':''}</b><span style="font-size:13px;">${m.total}건 · ${m.days}일 ${dtxt?'('+dtxt+')':''}</span></div>${det}</div>`;
       }).join('') + '<div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;">월을 누르면 지난달보다 늘거나 줄어든 숙소가 나와.</div>' : '<div class="empty">일정 기록이 없어.</div>';
     } else {
-      body = log.length ? log.slice(0,80).map(e=>{ const t = new Date(e.t); const when = (t.getMonth()+1)+'/'+t.getDate()+' '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0'); return `<div style="padding:7px 0;border-bottom:1px solid var(--line,#eee);font-size:13px;"><span style="color:var(--ink-soft);font-size:12px;">${when}${e.u?' · '+esc(e.u):''}</span><br>${esc(md(e.d))} 일정에 <b>${esc(e.n)}</b> ${e.a==='+'?'<span style="color:var(--teal);font-weight:700;">추가</span>':'<span style="color:var(--clay);font-weight:700;">삭제</span>'}</div>`; }).join('') : '<div class="empty" style="padding:14px 0;">아직 기록이 없어.<br>이 업데이트 이후에 숙소를 넣거나 빼면 여기에 쌓여.</div>';
+      body = log.length ? log.slice(0,80).map(e=>{ const t = new Date(e.t); const when = (t.getMonth()+1)+'/'+t.getDate()+' '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0'); return `<div style="padding:7px 0;border-bottom:1px solid var(--line,#eee);font-size:13px;"><span style="color:var(--ink-soft);font-size:12px;">${when}${e.u?' · '+esc(e.u):''}</span><br>${e.a==='m' ? esc(md(e.from))+' → '+esc(md(e.d))+' <b>'+esc(e.n)+'</b> <span style="color:var(--ink-soft);font-weight:700;">날짜 이동</span>' : esc(md(e.d))+' 일정에 <b>'+esc(e.n)+'</b> '}${e.a==='m'?'':e.a==='+'?'<span style="color:var(--teal);font-weight:700;">추가</span>':'<span style="color:var(--clay);font-weight:700;">삭제</span>'}</div>`; }).join('') : '<div class="empty" style="padding:14px 0;">아직 기록이 없어.<br>이 업데이트 이후에 숙소를 넣거나 빼면 여기에 쌓여.</div>';
     }
     root.querySelector('.sheet').innerHTML = '<h2>📈 일정 변화</h2>'+seg+body+'<div class="sheet-actions"><button class="cancel-btn" id="cx">닫기</button></div>';
     root.querySelector('#cx').onclick = ()=>root.remove();
@@ -3895,6 +3910,7 @@ function renderScheduleCards(){
               <button class="ps-chip ${isPickupOnly(p)?'on':''}" data-ps-pickup="${esc(id)}" title="세탁물 수거만 (순서 제외) · 숙소 전체 적용">📦</button>
               <button class="ps-chip ${lobbyShown(p)?'on':''}" data-ps-lobby="${esc(id)}" title="공동현관 비번 줄 (숙소 전체 적용)">🚪</button>
               <button class="ps-chip ${inOutShown(p,id)?'on':''}" data-ps-inout="${esc(id)}" title="IN/OUT 비번 두 칸 (숙소 전체 적용)">🔑</button>
+              <button class="ps-chip" data-ps-next="${esc(id)}" title="이 숙소를 내일 일정으로 넘기기">➡️</button>
               <button class="ps-chip" data-ps-default="${esc(id)}" title="지금 설정을 이 숙소의 기본값으로 (이후 모든 일정)">📌</button>
             </div></div>` : ''}
           ${isAdmin() ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;"><button data-ps-toggle="${id}" title="이 숙소 설정" aria-label="이 숙소 설정" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:${state.psOpen&&state.psOpen.has(id)?1:.55};cursor:pointer;">⚙️</button><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
@@ -4742,6 +4758,7 @@ function attachHandlers(){
     render(); await saveProperties(); await saveTodayRecord();
     try{ await applyPropToFuture(pid, true); }catch(e){} render();
   });
+  document.querySelectorAll('[data-ps-next]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const sd = state.selectedDate; const d = new Date(Number(sd.slice(0,4)), Number(sd.slice(5,7))-1, Number(sd.slice(8,10))+1); moveProperty(el.dataset.psNext, d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())); });
   document.querySelectorAll('[data-ps-lobby]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psLobby); if(p) psSave(p.id, { lobbyOn: !lobbyShown(p) }); });
   document.querySelectorAll('[data-ps-inout]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psInout); if(p) psSave(p.id, { inOutOn: !inOutShown(p, p.id) }); });
   document.querySelectorAll('[data-lobby-pw]').forEach(el=> el.onchange = async ()=>{ const i = state.properties.findIndex(x=>x.id===el.dataset.lobbyPw); if(i<0) return; state.properties[i] = { ...state.properties[i], lobbyPw: el.value.trim() }; await saveProperties(); });
