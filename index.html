@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-51';
+const APP_BUILD = '1102-52';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3799,7 +3799,7 @@ function priorityFirst(rec){
   const first = a.filter(id=>pri.has(id)), rest = a.filter(id=>!pri.has(id));
   a.splice(0, a.length, ...first, ...rest);
 }
-// 어제 '🌅 내일 오전 체크'로 표시해둔 숙소 중 아직 ✅ 안 한 곳을 오늘 탭 맨 위에 알려줌
+// 어제 '🌅 내일 체크'로 표시해둔 숙소 중 아직 ✅ 안 한 곳을 오늘 탭 맨 위에 알려줌
 function loadMorningPrev(ds){
   const d = new Date(Number(ds.slice(0,4)), Number(ds.slice(5,7))-1, Number(ds.slice(8,10))-1);
   const pds = d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
@@ -3822,7 +3822,7 @@ function renderMorningBanner(){
   });
   if(!items.length) return '';
   return `<div class="prop-card open" style="margin-bottom:10px;border-color:var(--amber,#E0A100);"><div style="padding:10px 12px;">
-    <div style="font-weight:700;font-size:14px;margin-bottom:6px;">🌅 어제 오전 체크 남은 곳 ${items.length}곳</div>
+    <div style="font-weight:700;font-size:14px;margin-bottom:6px;">🌅 어제 체크 남은 곳 ${items.length}곳</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">${items.map(x=> x.inToday ? `<span class="pill-btn" style="opacity:.85;">${esc(x.name)} · 오늘 일정에 있음</span>` : `<button class="pill-btn" data-morning-add="${esc(x.id)}">${esc(x.name)} ＋</button>`).join('')}</div>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">＋를 누르면 오늘 일정에 추가돼. ✅ 체크하면 여기서 빠져.</div>
   </div></div>`;
@@ -3885,7 +3885,7 @@ function renderScheduleCards(){
               ${assignedSt ? `<span class="worker-badge" style="flex-shrink:0;">${esc(assignedSt.name)}${(()=>{ const l=staffAssignedProps(assignedSt.id); const k=l.indexOf(id); return (l.length>1 && k>=0) ? ' <span class="wk-no">'+(k+1)+'</span>' : ''; })()}</span>` : ''}
             </div>
             <div style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;"><span class="qchk">${isAdmin() ? `<button class="qb ${isPriority?'on':''}" data-stop-toggle="1" data-toggle-priority="${id}" title="당일체크인">🔴</button>` : ''}${tasks.map((t,i)=>`<button class="qb ${t.done?'on':''}" data-stop-toggle="1" data-task="${id}:${i}" title="${esc(t.text)}">${taskIcon(t.text)}</button>`).join('')}${conditionTask ? `<button class="qb ${conditionDone?'on':''}" data-stop-toggle="1" ${conditionDone?`data-report="${id}"`:''} title="${conditionDone ? '완료 보고하기'+(lastReportFor(id)?' (최근 보고 '+formatSendTime(lastReportFor(id).ts)+')':'') : '컨디션 체크를 마치면 보고할 수 있어'}">📨</button>` : ''}</span></div>
-            ${(state.todayRecord.morningCheck||{})[id] ? `<div class="head-note" style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;">🌅 내일 오전 체크</div>` : ''}${dayNote ? `<div class="head-note" style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;">📝 ${esc(dayNote)}</div>` : ''}
+            ${(state.todayRecord.morningCheck||{})[id] ? `<div class="head-note" style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;">🌅 내일 체크</div>` : ''}${dayNote ? `<div class="head-note" style="margin-top:3px;margin-left:${ids.length>=10?23:13}px;">📝 ${esc(dayNote)}</div>` : ''}
           </div>
           <a href="${kakaoMapUrl(p.address)}" target="_blank" rel="noopener" data-stop-toggle="1" class="nav-icon-btn">🧭</a>
           ${isAdmin() ? `<div class="drag-handle" data-drag="${id}" data-stop-toggle="1" title="누른 채로 끌어서 순서 바꾸기"><i></i></div>` : ''}
@@ -3935,7 +3935,7 @@ function renderScheduleCards(){
           ${isAdmin() && state.psOpen && state.psOpen.has(id) ? `<div class="prop-set-row">
             <div class="ps-chips">
               ${[['세탁 완료','🧺'],['세탁물 전달','🚚'],['컨디션 체크','✅']].map(([t,e])=>`<button class="ps-chip ${offForDay(state.todayRecord,id).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}" title="${t} (이 날짜만)">${e}</button>`).join('')}
-              <button class="ps-chip ${((state.todayRecord.morningCheck||{})[id])?'on':''}" data-ps-morning="${esc(id)}" title="내일 오전에 체크 (이 날짜만)">🌅</button>
+              <button class="ps-chip ${((state.todayRecord.morningCheck||{})[id])?'on':''}" data-ps-morning="${esc(id)}" title="내일 체크 (이 날짜만)">🌅</button>
               <button class="ps-chip" data-ps-next="${esc(id)}" title="이 숙소를 내일 일정으로 넘기기">➡️</button>
             </div>
             <div class="ps-chips" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--paper-line);">
