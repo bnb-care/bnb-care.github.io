@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-41';
+const APP_BUILD = '1102-44';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -688,6 +688,13 @@ async function ensureSeedProps(){
     localStorage.setItem('seed:staywith1','1');
   }catch(e){}
 }
+// 공동현관 줄 / IN·OUT 두 칸 표시 여부 (⚙️ 🚪 🔑 스위치, 숙소 전체 적용)
+function lobbyShown(p){ return p.lobbyOn===true || (p.lobbyOn===undefined && !!p.lobbyPw); }
+function inOutShown(p, id){
+  if(p.inOutOn===true || p.inOutOn===false) return p.inOutOn;
+  const r = state.todayRecord || {};
+  return !!(((r.dayPass||{})[id]) || ((r.dayPassOut||{})[id]) || autoInFor(id) || /매번/.test(p.password||'') || /^망원(동)?\s*2룸/.test(p.name||''));
+}
 // 청소직원 지급 단가(원): 숙소별 payRate. fmtMan: 32.5만
 function payOf(pid){ const p = propById(pid); return (p && Number(p.payRate)) || 0; }
 function fmtMan(n){ if(!n) return '0원'; return n>=10000 ? (Math.round(n/1000)/10)+'만원' : n.toLocaleString()+'원'; }
@@ -710,6 +717,22 @@ async function ensurePayRates(){
     });
     if(n) await saveProperties();
     localStorage.setItem('seed:payrate1','1'); render();
+  }catch(e){}
+}
+// '1층:7725/3층:9988*' 처럼 한 칸에 적힌 비번을 공동현관(lobbyPw)과 호실 비번으로 한 번만 나눔
+async function ensureLobbySplit(){
+  try{
+    if(!(cloud && cloud.user && isAdmin())) return;
+    if(localStorage.getItem('seed:lobby1')==='1') return;
+    if(!state.properties.length) return;
+    let n = 0;
+    state.properties.forEach(p=>{
+      if(p.lobbyPw) return;
+      const m = String(p.password||'').match(/^\s*1\s*층\s*:?\s*([^\/\s]+)\s*\/\s*\d+\s*층\s*:?\s*(.+?)\s*$/);
+      if(m){ p.lobbyPw = m[1]; p.password = m[2]; n++; }
+    });
+    if(n) await saveProperties();
+    localStorage.setItem('seed:lobby1','1'); render();
   }catch(e){}
 }
 // 스테이위드는 세탁·전달을 안 하므로 한 번만 전부 꺼 두고, 이미 만든 오늘 이후 일정에서도 뺌
@@ -1693,7 +1716,7 @@ function buildPwOnlyText(st){
   const rows = ids.map((id,i)=>({id,i})).filter(x=> inOf(x.id));
   if(!rows.length) return '입력된 오늘 비번이 없어. 오늘 탭 숙소 카드에서 먼저 입력해줘.';
   const lines = [`${renderDateLabel()} ${st.name}님 비번 안내`, ''];
-  rows.forEach(x=>{ const p = propById(x.id); lines.push(`${x.i+1}. ${p?p.name:''} | ${inOf(x.id)}`); });
+  rows.forEach(x=>{ const p = propById(x.id); lines.push(`${x.i+1}. ${p?p.name:''} | ${inOf(x.id)}`); if(p && lobbyShown(p) && p.lobbyPw) lines.push(`   공동현관: ${String(p.lobbyPw).trim()}`); });
   return lines.join('\n');
 }
 function buildPersonalText(st, withPw, withAddr, greet){
@@ -1714,7 +1737,9 @@ function buildPersonalText(st, withPw, withAddr, greet){
     const pwTxt = dayPw ? dayPw : (/매번\s*(바뀜|바뀌|변경)/.test(p.password||'') ? '비번 추후 전달' : (p.password||''));
     lines.push(`${i+1}. ${p.name}${(withPw && pwTxt) ? ' | '+pwTxt : ''}`);
     // 퇴실 시 바꿀 비번(OUT)은 청소 작업자에게 안 알려줌
-    if((withAddr && p.address) || note || isPri) lines.push('');
+    const lob = (withPw && lobbyShown(p) && p.lobbyPw) ? String(p.lobbyPw).trim() : '';
+    if(lob || (withAddr && p.address) || note || isPri) lines.push('');
+    if(lob) lines.push(`- 공동현관: ${lob}`);
     if(withAddr && p.address) lines.push(`- ${p.address}`);
     if(isPri) lines.push('- 당일 체크인');
     if(note) lines.push(`- ${note}`);
@@ -3755,13 +3780,14 @@ function renderScheduleCards(){
             const auto = autoInFor(id);
             const outVal = ((state.todayRecord.dayPassOut||{})[id])||'';
             const inVal = dayPassVal || auto || (/매번/.test(p.password||'') ? '' : (p.password||''));
-            return `<div class="pw-row">
+            const showIO = inOutShown(p, id);
+            return `${lobbyShown(p) ? `<div class="pw-row"><span class="pw-icon">🚪</span><div class="pw-pair"><label class="pw-half" style="flex:1;"><b>공동현관</b><input class="pw-edit" data-lobby-pw="${id}" ${isAdmin()?'':'readonly'} value="${esc(String(p.lobbyPw||''))}" placeholder="입구 비번"></label></div></div>` : ''}${!showIO ? `<div class="pw-row"><span class="pw-icon">🔑</span><div class="pw-pair"><label class="pw-half" style="flex:1;"><b>비번</b><input class="pw-edit" data-day-in="${id}" ${isAdmin()?'':'readonly'} value="${esc(inVal)}" placeholder="없음"></label></div></div>` : `<div class="pw-row">
             <span class="pw-icon">🔑</span>
             <div class="pw-pair">
               <label class="pw-half"><b>IN</b><input class="pw-edit" data-day-in="${id}" ${isAdmin()?'':'readonly'} value="${esc(inVal)}" placeholder="${isMb ? '앞 손님 체크인 날짜 (1015*)' : (/매번/.test(p.password||'') ? '오늘 비번' : '없음')}"></label>
               <label class="pw-half"><b>OUT</b><input class="pw-edit" data-day-pass-out="${id}" ${isAdmin()?'':'readonly'} value="${esc(outVal)}" placeholder="바꿀 비번"></label>
             </div>
-          </div>${(()=>{ const w = (!dayPassVal && (auto || /매번/.test(p.password||''))) ? prevWarnFor(id) : ''; if(w) return `<div style="font-size:12.5px;font-weight:600;color:var(--clay);margin:-2px 0 6px 26px;">${esc(w)}</div>`; return (!dayPassVal && auto) ? `<div style="font-size:12px;color:var(--ink-soft);margin:-2px 0 6px 26px;">IN은 앞 일정 OUT 비번이 자동으로 들어왔어</div>` : ''; })()}${isMb ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}`;
+          </div>`}${!showIO ? '' : (()=>{ const w = (!dayPassVal && (auto || /매번/.test(p.password||''))) ? prevWarnFor(id) : ''; if(w) return `<div style="font-size:12.5px;font-weight:600;color:var(--clay);margin:-2px 0 6px 26px;">${esc(w)}</div>`; return (!dayPassVal && auto) ? `<div style="font-size:12px;color:var(--ink-soft);margin:-2px 0 6px 26px;">IN은 앞 일정 OUT 비번이 자동으로 들어왔어</div>` : ''; })()}${isMb ? `<div class="pass-suggest" data-pass-suggest="${id}" style="font-size:12px;color:var(--ink-soft);margin:-2px 0 8px 26px;"></div>` : ''}`;
           })()}
           <div class="notes-row">
             <span class="pw-icon">📋</span>
@@ -3789,8 +3815,10 @@ function renderScheduleCards(){
             <div class="ps-chips">
               ${[['세탁 완료','🧺'],['세탁물 전달','🚚'],['컨디션 체크','✅']].map(([t,e])=>`<button class="ps-chip ${offForDay(state.todayRecord,id).includes(t)?'':'on'}" data-ps-task="${esc(id)}|${t}" title="${t} (이 날짜만)">${e}</button>`).join('')}
               <button class="ps-chip ${isPickupOnly(p)?'on':''}" data-ps-pickup="${esc(id)}" title="세탁물 수거만 (순서 제외) · 숙소 전체 적용">📦</button>
+              <button class="ps-chip ${lobbyShown(p)?'on':''}" data-ps-lobby="${esc(id)}" title="공동현관 비번 줄 (숙소 전체 적용)">🚪</button>
+              <button class="ps-chip ${inOutShown(p,id)?'on':''}" data-ps-inout="${esc(id)}" title="IN/OUT 비번 두 칸 (숙소 전체 적용)">🔑</button>
               <button class="ps-chip" data-ps-default="${esc(id)}" title="지금 설정을 이 숙소의 기본값으로 (이후 모든 일정)">📌</button>
-            </div><div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">🧺🚚✅는 이 날짜만 바뀌어 · 📌은 지금 설정을 이 숙소 기본값으로 (이후 일정 전부)</div></div>` : ''}
+            </div></div>` : ''}
           ${isAdmin() ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;"><button data-ps-toggle="${id}" title="이 숙소 설정" aria-label="이 숙소 설정" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:${state.psOpen&&state.psOpen.has(id)?1:.55};cursor:pointer;">⚙️</button><button data-remove-job="${id}" title="이 날짜에서 빼기" aria-label="이 날짜에서 빼기" style="border:none;background:transparent;font-size:17px;line-height:1;padding:6px 4px;opacity:.55;cursor:pointer;">🗑</button></div>` : ''}
         </div>
       </div>
@@ -3831,7 +3859,7 @@ function renderScheduleCards(){
 
 function renderAll(){
   const q = state.search.trim().toLowerCase();
-  const qm = p => !q || p.name.toLowerCase().includes(q) || (p.owner||'').toLowerCase().includes(q) || (p.room||'').toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q);
+  const qm = p => !q || p.name.toLowerCase().includes(q) || (p.owner||'').toLowerCase().includes(q) || (p.address||'').toLowerCase().includes(q);
   const list = activeProps().filter(qm).slice().sort(cmpByColor);
   const inactList = state.properties.filter(p=>p.inactive).filter(qm).slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const inactAll = state.properties.filter(p=>p.inactive).length;
@@ -3842,7 +3870,7 @@ function renderAll(){
       <div class="prop-top" data-toggle="${p.id}">
         <div>
           <div class="prop-name">${esc(p.name)}</div>
-          <div class="prop-sub">${esc(p.owner||'담당자 미기재')} · ${esc(p.address)}${p.room?' · 💬 '+esc(p.room):''}</div>
+          <div class="prop-sub">${esc(p.owner||'담당자 미기재')} · ${esc(p.address)}</div>
         </div>
         <div class="chevron">▶</div>
       </div>
@@ -3852,6 +3880,7 @@ function renderAll(){
         <div class="detail-row"><b>체크인·아웃</b>OUT ${esc(p.out)||'-'} / IN ${esc(p.in)||'-'}</div>
         <div class="detail-row"><b>룸/화장실</b>${esc(p.rooms)||'-'}</div>
         <div class="detail-row"><b>침대</b>${esc(p.beds)||'-'}</div>
+        ${p.lobbyPw ? `<div class="detail-row"><b>공동현관</b><span class="pw-value">${esc(String(p.lobbyPw))}</span></div>` : ''}
         <div class="detail-row"><b>비밀번호</b><span class="pw-value">${esc(p.password)||'-'}</span></div>
         <div class="detail-row"><b>참고사항</b>${esc(p.notes)||'-'}</div>
         ${p.parkingUrl ? `<div class="detail-row"><b>주차등록</b><a href="${esc(p.parkingUrl)}" target="_blank" rel="noopener" style="color:var(--teal);">🚗 등록 사이트 열기</a>${(p.parkingId||p.parkingPw) ? ` · <span class="pw-value">${esc(p.parkingId)} / ${esc(p.parkingPw)}</span>` : ''}</div>` : ''}
@@ -4100,10 +4129,10 @@ function openEditSheet(prop){
       <h2>${e.id ? '업체 정보 수정' : '새 업체 추가'}</h2>
       <div class="field"><label>상호명</label><input id="f_name" value="${esc(e.name)}"></div>
       <div class="field"><label>담당자(대표)</label><input id="f_owner" value="${esc(e.owner)}"></div>
-      <div class="field"><label>카톡방 이름</label><input id="f_room" value="${esc(e.room||'')}" placeholder="예: 용강동2룸"></div>
       <div class="field"><label>연락처</label><input id="f_phone" value="${esc(e.phone)}"></div>
       <div class="field"><label>주소</label><input id="f_address" value="${esc(e.address)}"></div>
-      <div class="field"><label>비밀번호</label><input id="f_password" value="${esc(e.password)}"></div>
+      <div class="field"><label>공동현관 비밀번호 (있는 곳만)</label><input id="f_lobbyPw" value="${esc(String(e.lobbyPw||''))}"></div>
+      <div class="field"><label>비밀번호 (호실)</label><input id="f_password" value="${esc(e.password)}"></div>
       <div class="field-grid">
         <div class="field"><label>체크아웃(OUT)</label><input id="f_out" value="${esc(e.out)}"></div>
         <div class="field"><label>체크인(IN)</label><input id="f_in" value="${esc(e.in)}"></div>
@@ -4139,10 +4168,10 @@ function openEditSheet(prop){
     const vals = {
       name: document.getElementById('f_name').value.trim(),
       owner: document.getElementById('f_owner').value.trim(),
-      room: document.getElementById('f_room').value.trim(),
       phone: document.getElementById('f_phone').value.trim(),
       address: document.getElementById('f_address').value.trim(),
       password: document.getElementById('f_password').value.trim(),
+      lobbyPw: document.getElementById('f_lobbyPw').value.trim(),
       out: document.getElementById('f_out').value.trim(),
       in: document.getElementById('f_in').value.trim(),
       rooms: document.getElementById('f_rooms').value.trim(),
@@ -4635,6 +4664,9 @@ function attachHandlers(){
     render(); await saveProperties(); await saveTodayRecord();
     try{ await applyPropToFuture(pid, true); }catch(e){} render();
   });
+  document.querySelectorAll('[data-ps-lobby]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psLobby); if(p) psSave(p.id, { lobbyOn: !lobbyShown(p) }); });
+  document.querySelectorAll('[data-ps-inout]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psInout); if(p) psSave(p.id, { inOutOn: !inOutShown(p, p.id) }); });
+  document.querySelectorAll('[data-lobby-pw]').forEach(el=> el.onchange = async ()=>{ const i = state.properties.findIndex(x=>x.id===el.dataset.lobbyPw); if(i<0) return; state.properties[i] = { ...state.properties[i], lobbyPw: el.value.trim() }; await saveProperties(); });
   document.querySelectorAll('[data-ps-pickup]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPickup); if(p) psSave(p.id, { pickupOnly: !isPickupOnly(p) }); });
   document.querySelectorAll('[data-ps-pri]').forEach(el=> el.onclick = (ev)=>{ ev.stopPropagation(); const p = propById(el.dataset.psPri); if(p) psSave(p.id, { alwaysPriority: !p.alwaysPriority }); });
   document.querySelectorAll('[data-daynote]').forEach(el=>{
@@ -5309,6 +5341,7 @@ async function startApp(){
   await ensureSeedProps();
   ensureStaywithNoTasks();
   ensurePayRates();
+  ensureLobbySplit();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
   if(cloud && isAdmin() && state.properties.length === 0 && localStorage.getItem(KEY_PROPS)){
     if(confirm('서버에 숙소 데이터가 아직 없어. 이 폰에 저장된 데이터를 서버로 올릴까?')) await uploadLocalData();
