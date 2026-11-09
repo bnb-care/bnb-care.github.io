@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-40';
+const APP_BUILD = '1102-41';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -686,6 +686,30 @@ async function ensureSeedProps(){
       state.properties = list; render();
     }
     localStorage.setItem('seed:staywith1','1');
+  }catch(e){}
+}
+// 청소직원 지급 단가(원): 숙소별 payRate. fmtMan: 32.5만
+function payOf(pid){ const p = propById(pid); return (p && Number(p.payRate)) || 0; }
+function fmtMan(n){ if(!n) return '0원'; return n>=10000 ? (Math.round(n/1000)/10)+'만원' : n.toLocaleString()+'원'; }
+// 확실한 이름만 한 번 채움 (이미 값이 있거나 애매한 숙소는 건드리지 않음 → 숙소 수정에서 직접 입력)
+async function ensurePayRates(){
+  try{
+    if(!(cloud && cloud.user && isAdmin())) return;
+    if(localStorage.getItem('seed:payrate1')==='1') return;
+    if(!state.properties.length) return;
+    let n = 0;
+    state.properties.forEach(p=>{
+      if(p.payRate !== undefined) return;
+      const nm = String(p.name||'');
+      let v = 0;
+      if(/연남동?\s*3\s*룸/.test(nm)) v = 40000;
+      else if(/와우산로/.test(nm)) v = 45000;
+      else if(/3\s*룸/.test(nm)) v = 35000;
+      else if(/(LG|엘지)/i.test(nm) || /파라다이스텔/.test(nm) || /투룸|2\s*룸/.test(nm)) v = 25000;
+      if(v){ p.payRate = v; n++; }
+    });
+    if(n) await saveProperties();
+    localStorage.setItem('seed:payrate1','1'); render();
   }catch(e){}
 }
 // 스테이위드는 세탁·전달을 안 하므로 한 번만 전부 꺼 두고, 이미 만든 오늘 이후 일정에서도 뺌
@@ -1776,15 +1800,16 @@ function computeAssignStats(){
       { const pn = (propById(id)||{}).name || '(삭제된 숙소)'; const bp = byProp[pn] = byProp[pn] || { n:0, staff:{} }; bp.n++; const k = sid || '_none'; bp.staff[k] = (bp.staff[k]||0)+1; }
       if(!sid){ unassigned++; return; }
       any = true;
-      const o = out[sid] = out[sid] || { n:0, days:new Set(), props:{} };
-      o.n++; o.days.add(ds); const nm = (propById(id)||{}).name || '(삭제된 숙소)'; o.props[nm] = (o.props[nm]||0)+1;
+      const o = out[sid] = out[sid] || { n:0, days:new Set(), props:{}, pay:0 };
+      o.n++; o.pay += payOf(id); o.days.add(ds); const nm = (propById(id)||{}).name || '(삭제된 숙소)'; o.props[nm] = (o.props[nm]||0)+1;
     });
     if(any) daysWithData++;
   });
-  return { out, byProp, unassigned, total, daysWithData, range:[a,b] };
+  const totalPay = Object.keys(out).reduce((t,k)=>t+out[k].pay,0);
+  return { out, byProp, unassigned, total, daysWithData, range:[a,b], totalPay };
 }
 function asDetail(items, indent){
-  const rows = items.map(([n,c])=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 8px;background:var(--paper);border-radius:6px;font-size:12.5px;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n}</span><b>${c}</b></div>`).join('');
+  const rows = items.map(([n,c,x])=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 8px;background:var(--paper);border-radius:6px;font-size:12.5px;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n}</span><b>${c}${x?' · '+x:''}</b></div>`).join('');
   return `<div style="margin:8px 0 4px ${indent>80?0:0}px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;">${rows}</div>`;
 }
 function renderAssignStats(){
@@ -1815,12 +1840,14 @@ function renderAssignStats(){
       <div style="display:flex;align-items:center;gap:8px;"><b style="width:64px;flex-shrink:0;font-size:14px;">${esc(r.name)}${r.mgr?' <span style="font-size:10px;color:var(--ink-soft);">관리</span>':''}</b>
         <div style="flex:1;height:14px;background:#EEF0EA;border-radius:7px;overflow:hidden;"><div style="width:${Math.max(6,Math.round(r.o.n/max*100))}%;height:100%;background:var(--teal);border-radius:7px;"></div></div>
         <span style="width:84px;text-align:right;font-size:12.5px;flex-shrink:0;"><b>${r.o.n}건</b> · ${r.o.days.size}일</span></div>
-      ${open ? asDetail(top.map(([n,c])=>[esc(n),c]), 72) : ''}
+      ${r.o.pay ? `<div style="font-size:12px;color:var(--ink-soft);margin:2px 0 0 72px;">예상 지급 <b style="color:var(--ink);">${fmtMan(r.o.pay)}</b></div>` : ''}
+      ${open ? asDetail(top.map(([n,c])=>{ const pr = ((state.properties.find(p=>p.name===n)||{}).payRate)||0; return [esc(n),c,pr?fmtMan(pr*c):'']; }), 72) : ''}
     </div>`;
   }).join('') : '<div class="empty" style="padding:10px;">이 기간에 입력된 배정이 없어.</div>';
   return head + `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">
     <div style="display:flex;gap:6px;margin-bottom:8px;">${per('month','이번 달')}${per('30','최근 30일')}${per('all','전체')}<button class="pill-btn" data-as-view="1" style="margin-left:auto;${state.asView==='prop'?'background:var(--teal);color:#fff;':''}">숙소</button></div>
     ${body}
+    ${st.totalPay ? `<div style="font-size:13px;margin-top:8px;">💰 예상 지급 합계 <b>${fmtMan(st.totalPay)}</b></div>` : ''}
     <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;">전체 ${st.total}건 중 ${st.total-st.unassigned}건 배정${st.unassigned?` · <b style="color:var(--clay);">배정 안 된 숙소 ${st.unassigned}건</b>`:''}<br>이름을 누르면 자주 맡은 숙소가 보여. 배정을 입력한 날만 집계돼.</div>
   </div></div>`;
 }
@@ -4091,6 +4118,8 @@ function openEditSheet(prop){
         <div class="field"><label>주차등록 아이디</label><input id="f_parkingId" value="${esc(e.parkingId||'')}"></div>
         <div class="field"><label>주차등록 비밀번호</label><input id="f_parkingPw" value="${esc(e.parkingPw||'')}"></div>
       </div>
+      <div class="field"><label>청소 지급 단가(원) · 직원에게 주는 금액 (배정 현황에서 계산)</label><input id="f_payRate" inputmode="numeric" value="${esc(String(e.payRate||''))}" placeholder="예: 25000">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${[25000,35000,40000,45000].map(v=>`<button type="button" class="pill-btn" data-pay-preset="${v}">${v/10000}만</button>`).join('')}</div></div>
       <div class="field"><label>청소시간(분) · 비우면 크기로 자동 계산</label><input id="f_cleanMin" inputmode="numeric" value="${esc(e.cleanMin||'')}" placeholder="예: 90"></div>
       <div style="font-size:12px;color:var(--ink-soft);margin:6px 0;">체크할 항목·수거만 설정은 오늘탭 숙소 카드의 ⚙️ 에서 바꿔.</div>
       <label class="picker-row" style="margin-top:4px;">
@@ -4104,6 +4133,7 @@ function openEditSheet(prop){
     </div>
   `;
   document.body.appendChild(root);
+  document.querySelectorAll('[data-pay-preset]').forEach(b=> b.onclick = ()=>{ document.getElementById('f_payRate').value = b.dataset.payPreset; });
   document.getElementById('cancelEdit').onclick = ()=> root.remove();
   document.getElementById('saveEdit').onclick = async ()=>{
     const vals = {
@@ -4123,6 +4153,7 @@ function openEditSheet(prop){
       parkingPw: document.getElementById('f_parkingPw').value.trim(),
       alwaysPriority: document.getElementById('f_alwaysPriority').checked,
       cleanMin: parseInt(document.getElementById('f_cleanMin').value,10) || 0,
+      payRate: parseInt(String(document.getElementById('f_payRate').value).replace(/[^0-9]/g,''),10) || 0,
       pickupOnly: e.pickupOnly,
       dailyPass: !!e.dailyPass,
       noTasks: e.noTasks||[],
@@ -5277,6 +5308,7 @@ async function startApp(){
   if(cloud) watchShared();
   await ensureSeedProps();
   ensureStaywithNoTasks();
+  ensurePayRates();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
   if(cloud && isAdmin() && state.properties.length === 0 && localStorage.getItem(KEY_PROPS)){
     if(confirm('서버에 숙소 데이터가 아직 없어. 이 폰에 저장된 데이터를 서버로 올릴까?')) await uploadLocalData();
