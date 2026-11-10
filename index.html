@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-57';
+const APP_BUILD = '1102-61';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3843,7 +3843,7 @@ function renderToday(){
     if(!isAdmin()) return renderScheduleCalendar() + `<div class="empty">${renderDateLabel()}<br>아직 등록된 일정이 없어.</div>`;
     return (activeStaff().length ? '<button class="pill-btn" id="openSend" style="width:100%;margin-bottom:10px;">🌙 직원에게 일정 없음 알리기</button>' : '') + renderPickerBody('create');
   }
-  return renderScheduleCalendar() + renderTomorrowLaundry() + (isAdmin() ? renderMorningBanner() : '') + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
+  return renderScheduleCalendar() + renderDryBanner() + (isAdmin() ? renderMorningBanner() : '') + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
 }
 
 // 당일 체크인(🔴)은 항상 맨 위로 (그 안에서는 저장된 순서 유지)
@@ -3876,6 +3876,24 @@ function loadTomorrowLaundry(ds){
     if(changed && state.selectedDate === ds && state.tab === 'today') safeRender();
   }).catch(()=>{ if(!keep) state.tmrLaundry = { ds, tds, rec:null, raw:'', t: Date.now() }; });
 }
+function buildTmrLaundryReport(){
+  const tl = state.tmrLaundry, chk = state.todayRecord && state.todayRecord.tmrLaundryCheck; if(!tl || !tl.rec) return '';
+  const rec = tl.rec, ver = rec.laundryVerify || {};
+  const rows = []; (rec.propertyIds||[]).forEach(id=>{ const p = propById(id); if(!p) return; const w = ((rec.tasks||{})[id]||[]).find(t=>t.text==='세탁 완료'); if(!w) return; rows.push({ name:p.name, w1:!!w.done, v:ver[id] || null }); });
+  if(!rows.length) return '';
+  const d = new Date(Number(tl.tds.slice(0,4)), Number(tl.tds.slice(5,7))-1, Number(tl.tds.slice(8,10)));
+  const label = (d.getMonth()+1)+'/'+d.getDate()+'('+'일월화수목금토'[d.getDay()]+')';
+  const okN = rows.filter(r=>r.v).length, dryN = rows.filter(r=>r.v && r.v.dry).length;
+  const lines = ['🧺 내일 세탁 확인 · '+label, ''];
+  if(okN === rows.length) lines.push('세탁 '+rows.length+'곳 모두 확인했어요 ✔️'+(dryN?' (건조기 돌리는 중 '+dryN+'곳)':''));
+  else { lines.push('세탁 확인 '+okN+'/'+rows.length+'곳'); }
+  lines.push('');
+  rows.filter(r=>r.v).forEach(r=> lines.push((r.v.dry?'🌀 ':'✔️ ')+r.name+(r.v.dry?' (건조기 돌리는 중)':'')));
+  const bad = rows.filter(r=>!r.v);
+  if(bad.length){ lines.push(''); lines.push('확인 전:'); bad.forEach(r=> lines.push('· '+r.name+(r.w1?'':' (세탁 미완료)'))); }
+  if(chk){ const x = new Date(chk.at); lines.push(''); lines.push('확인: '+(chk.by||'')+' '+String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0')); }
+  return lines.join('\n');
+}
 function renderTomorrowLaundry(){
   const ds = state.selectedDate; if(!ds || ds !== todayStr()) return '';
   const tl = state.tmrLaundry;
@@ -3892,18 +3910,31 @@ function renderTomorrowLaundry(){
     rows.push({ id, name:p.name, w, ok1: !!w.done, v: ver[id] });
   });
   if(!rows.length) return '';
-  const n1 = rows.filter(r=>r.ok1).length, n2 = rows.filter(r=>r.v).length;
+  const n1 = rows.filter(r=>r.ok1).length, n2 = rows.filter(r=>r.v).length, nDry = rows.filter(r=>r.v && r.v.dry).length;
   const all2 = n2 === rows.length;
   const chk = state.todayRecord && state.todayRecord.tmrLaundryCheck;
   const hm = t=>{ const x = new Date(t); return String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0'); };
   const btn = (r,kind,t)=> t ? `<button class="ps-chip ${t.done?'on':''}" data-tl="${esc(r.id)}|${kind}" style="font-size:16px;padding:4px 9px;">${kind==='w'?'🧺':'🚚'}</button>` : '';
-  const list = all2 ? '' : rows.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13.5px;border-top:1px solid var(--paper-line);"><span style="${r.v?'opacity:.55;':''}">${esc(r.name)}</span><span style="display:flex;gap:6px;align-items:center;">${btn(r,'w',r.w)}<button class="ps-chip ${r.v?'on':''}" data-tl2="${esc(r.id)}" title="실제로 세탁 끝났는지 직접 확인" style="font-size:16px;padding:4px 9px;margin-left:4px;">✔️</button></span></div>`).join('');
-  return `<div class="prop-card open" style="margin-bottom:10px;${all2?'':'border-color:var(--clay);'}"><div style="padding:10px 12px;">
-    <div style="font-weight:700;font-size:14px;margin-bottom:${list?4:0}px;">🧺 내일 세탁 <span style="font-weight:600;">1차 ${n1}/${rows.length} · 2차 ${n2}/${rows.length}</span>${all2?' <span style="color:var(--teal);">✓ 확인 끝</span>':''}</div>
+  if(state.tlOpen === undefined){ try{ state.tlOpen = localStorage.getItem('pref:tlOpen')==='1'; }catch(e){ state.tlOpen = false; } }
+  const open = !!state.tlOpen;
+  const list = !open ? '' : rows.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13.5px;border-top:1px solid var(--paper-line);"><span style="${r.v?'opacity:.55;':''}">${esc(r.name)}</span><span style="display:flex;gap:6px;align-items:center;">${btn(r,'w',r.w)}<button class="ps-chip ${r.v&&!r.v.dry?'on':''}" data-tl2="${esc(r.id)}" title="실제로 세탁 끝났는지 직접 확인" style="font-size:16px;padding:4px 9px;margin-left:4px;">✔️</button><button class="ps-chip ${r.v&&r.v.dry?'on':''}" data-tl3="${esc(r.id)}" title="건조기에 돌리는 중" style="font-size:16px;padding:4px 9px;">🌀</button></span></div>`).join('');
+  return `<div class="prop-card open" style="margin-bottom:10px;${all2?'':'border-color:var(--clay);'}"><div style="padding:${open?'10px 12px':'8px 12px'};">
+    <div data-tl-toggle="1" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-weight:700;font-size:14px;${list?'margin-bottom:4px;':''}"><span>🧺 내일 세탁 <span style="font-weight:600;">1차 ${n1}/${rows.length} · 2차 ${n2}/${rows.length}${nDry?' · 🌀 '+nDry+'곳':''}</span>${all2?' <span style="color:var(--teal);">✓ 확인 끝</span>':''}</span><span style="color:var(--ink-soft);font-size:12px;">${open?'▲':'▼'}</span></div>
     ${list}
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--ink-soft);">
-      <span>${chk ? '✓ '+hm(chk.at)+' '+esc(chk.by||'')+' 마지막 확인'+(chk.left?' (미확인 '+chk.left+'곳)':'') : (all2?'':'✔️ = 실제로 끝난 걸 직접 확인')}</span>
-      <button class="pill-btn" data-tl-confirm="1">마지막 확인 완료</button></div>
+    ${open ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--ink-soft);">
+      <span>${chk ? '✓ '+hm(chk.at)+' '+esc(chk.by||'')+' 마지막 확인'+(chk.left?' (미확인 '+chk.left+'곳)':'') : '✔️ 직접 확인 · 🌀 건조기 돌리는 중'}</span>
+      <span style="display:flex;gap:6px;">${chk ? '<button class="pill-btn" data-tl-report="1">📤 보고</button>' : ''}<button class="pill-btn" data-tl-confirm="1">마지막 확인 완료</button></span></div>` : ''}
+  </div></div>`;
+}
+// 어제 건조기에 돌려두고 퇴근한 곳: 아침에 꺼내서 확인하면 ✅
+function renderDryBanner(){
+  const r = state.todayRecord; if(!r || !r.laundryVerify) return '';
+  const items = Object.keys(r.laundryVerify).filter(id=> r.laundryVerify[id] && r.laundryVerify[id].dry && propById(id));
+  if(!items.length) return '';
+  return `<div class="prop-card open" style="margin-bottom:10px;border-color:var(--amber,#E0A100);"><div style="padding:10px 12px;">
+    <div style="font-weight:700;font-size:14px;margin-bottom:6px;">🌀 어제 건조기에 둔 곳 ${items.length}곳</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${items.map(id=>`<button class="pill-btn" data-dry-out="${esc(id)}">${esc(propById(id).name)} ✅</button>`).join('')}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">꺼내서 확인했으면 이름을 눌러줘. 일정에는 추가되지 않아.</div>
   </div></div>`;
 }
 function renderMorningBanner(){
@@ -4063,7 +4094,7 @@ function renderScheduleCards(){
         </div>
       </div>
     </div>
-    ${laundryAllDone ? `<button class="export-btn" id="laundryReportBtn" style="margin-top:0;margin-bottom:14px;background:var(--teal);">🚚 세탁물 전달 완료 보고</button>` : ''}
+    ${renderTomorrowLaundry()}
     ${cards}
     ${(state.todayRecord.excludedIds && state.todayRecord.excludedIds.length > 0) ? `
       <div class="excluded-section">
@@ -4901,6 +4932,7 @@ function attachHandlers(){
       state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
     }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
   });
+  document.querySelectorAll('[data-tl-toggle]').forEach(el=> el.onclick = ()=>{ state.tlOpen = !state.tlOpen; try{ localStorage.setItem('pref:tlOpen', state.tlOpen?'1':'0'); }catch(e){} render(); });
   document.querySelectorAll('[data-tl2]').forEach(el=> el.onclick = async ()=>{
     const id = el.dataset.tl2, tl = state.tmrLaundry; if(!tl) return;
     try{
@@ -4908,7 +4940,7 @@ function attachHandlers(){
       const r = JSON.parse(x.value); const tk = (r.tasks||{})[id] || [];
       const w = tk.find(q=>q.text==='세탁 완료');
       r.laundryVerify = r.laundryVerify || {};
-      if(r.laundryVerify[id]) delete r.laundryVerify[id];
+      if(r.laundryVerify[id] && !r.laundryVerify[id].dry) delete r.laundryVerify[id];
       else {
         if(!w || !w.done){ miniToast('1차 체크(🧺 세탁 완료)가 먼저 필요해', true); return; }
         r.laundryVerify[id] = { by: (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나', at: Date.now() };
@@ -4918,6 +4950,28 @@ function attachHandlers(){
       state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
     }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
   });
+  document.querySelectorAll('[data-tl3]').forEach(el=> el.onclick = async ()=>{
+    const id = el.dataset.tl3, tl = state.tmrLaundry; if(!tl) return;
+    try{
+      const x = await window.storage.get('today:'+tl.tds, false); if(!x || !x.value) return;
+      const r = JSON.parse(x.value); const w = ((r.tasks||{})[id]||[]).find(q=>q.text==='세탁 완료');
+      r.laundryVerify = r.laundryVerify || {};
+      if(r.laundryVerify[id] && r.laundryVerify[id].dry) delete r.laundryVerify[id];
+      else {
+        if(!w || !w.done){ miniToast('1차 체크(🧺 세탁 완료)가 먼저 필요해', true); return; }
+        r.laundryVerify[id] = { by: (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나', at: Date.now(), dry: true };
+      }
+      const raw = JSON.stringify(r);
+      await window.storage.set('today:'+tl.tds, raw, false);
+      state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
+    }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
+  });
+  document.querySelectorAll('[data-dry-out]').forEach(el=> el.onclick = async ()=>{
+    const id = el.dataset.dryOut, r = state.todayRecord; if(!r || !r.laundryVerify || !r.laundryVerify[id]) return;
+    const me = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나';
+    r.laundryVerify[id] = { ...r.laundryVerify[id], dry: false, out: { by: me, at: Date.now() } };
+    await saveTodayRecord(); render();
+  });
   document.querySelectorAll('[data-tl-confirm]').forEach(el=> el.onclick = async ()=>{
     const tl = state.tmrLaundry, r = state.todayRecord; if(!tl || !r) return;
     const isWash = t=>t.text==='세탁 완료', isDel = t=>t.text.includes('세탁') && t.text.includes('전달');
@@ -4925,7 +4979,9 @@ function attachHandlers(){
     if(left && !confirm('2차 확인이 안 된 곳이 '+left+'곳 있어. 그래도 마지막 확인으로 남길까?')) return;
     r.tmrLaundryCheck = { by: (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나', at: Date.now(), left };
     await saveTodayRecord(); render();
+    if(confirm('카톡 직원창에 확인 결과를 보고할까?')){ const t = buildTmrLaundryReport(); if(t) await shareOrCopy(t); }
   });
+  document.querySelectorAll('[data-tl-report]').forEach(el=> el.onclick = async ()=>{ const t = buildTmrLaundryReport(); if(t) await shareOrCopy(t); });
   document.querySelectorAll('[data-morning-done]').forEach(el=> el.onclick = async ()=>{
     const id = el.dataset.morningDone, mp = state.morningPrev; if(!mp || !mp.pds) return;
     try{
