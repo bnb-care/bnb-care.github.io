@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-63';
+const APP_BUILD = '1102-64';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3919,7 +3919,7 @@ function renderTomorrowLaundry(){
   const open = !!state.tlOpen;
   const list = !open ? '' : rows.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13.5px;border-top:1px solid var(--paper-line);"><span><span style="${r.v?'opacity:.55;':''}">${esc(r.name)}</span>${r.v?`<br><span style="font-size:11px;color:var(--ink-soft);">${r.v.dry?'🌀':'✔️'} ${esc(r.v.by||'')} ${hm(r.v.at)}</span>`:''}</span><span style="display:flex;gap:6px;align-items:center;">${btn(r,'w',r.w)}<button class="ps-chip ${r.v&&!r.v.dry?'on':''}" data-tl2="${esc(r.id)}" title="실제로 세탁 끝났는지 직접 확인" style="font-size:16px;padding:4px 9px;margin-left:4px;">✔️</button><button class="ps-chip ${r.v&&r.v.dry?'on':''}" data-tl3="${esc(r.id)}" title="건조기에 돌리는 중" style="font-size:16px;padding:4px 9px;">🌀</button></span></div>`).join('');
   return `<div class="prop-card open" style="margin-bottom:10px;${all2?'':'border-color:var(--clay);'}"><div style="padding:${open?'10px 12px':'8px 12px'};">
-    <div data-tl-toggle="1" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-weight:700;font-size:14px;${list?'margin-bottom:4px;':''}"><span>🧺 내일 세탁 <span style="font-weight:600;">1차 ${n1}/${rows.length} · 2차 ${n2}/${rows.length}${nDry?' · 🌀 '+nDry+'곳':''}</span>${all2?' <span style="color:var(--teal);">✓ 확인 끝</span>':''}</span><span style="color:var(--ink-soft);font-size:12px;">${open?'▲':'▼'}</span></div>
+    <div data-tl-toggle="1" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-weight:700;font-size:14px;${list?'margin-bottom:4px;':''}"><span>🧺 내일 세탁 <span style="font-weight:600;">1차 ${n1}/${rows.length} · 2차 ${n2}/${rows.length}${nDry?' · 🌀 '+nDry+'곳':''}</span>${all2?' <span style="color:var(--teal);">✓ 확인 끝</span>':` <span style="color:var(--clay);">· 확인 전 ${rows.length-n2}곳</span>`}</span><span style="color:var(--ink-soft);font-size:12px;">${open?'▲':'▼'}</span></div>
     ${list}
     ${open ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--ink-soft);">
       <span>${chk ? '✓ '+hm(chk.at)+' '+esc(chk.by||'')+' 마지막 확인'+(chk.left?' (미확인 '+chk.left+'곳)':'') : '✔️ 직접 확인 · 🌀 건조기 돌리는 중'}</span>
