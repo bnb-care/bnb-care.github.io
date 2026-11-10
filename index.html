@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-53';
+const APP_BUILD = '1102-54';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -707,6 +707,7 @@ async function ensurePayRates(){
   try{
     if(!(cloud && cloud.user && isAdmin())) return;
     if(localStorage.getItem('seed:payrate1')==='1') return;
+    await refreshPropsFromServer();
     if(!state.properties.length) return;
     let n = 0;
     state.properties.forEach(p=>{
@@ -728,6 +729,7 @@ async function ensureLobbySplit(){
   try{
     if(!(cloud && cloud.user && isAdmin())) return;
     if(localStorage.getItem('seed:lobby1')==='1') return;
+    await refreshPropsFromServer();
     if(!state.properties.length) return;
     let n = 0;
     state.properties.forEach(p=>{
@@ -744,6 +746,7 @@ async function ensureStaywithNoTasks(){
   try{
     if(!(cloud && cloud.user && isAdmin())) return;
     if(localStorage.getItem('seed:staywith2')==='1') return;
+    await refreshPropsFromServer();
     const targets = state.properties.filter(p=>/^스테이\s*위드/.test(p.name||''));
     if(!targets.length) return;
     const OFF = ['세탁 완료','세탁물 전달'];
@@ -756,12 +759,62 @@ async function ensureStaywithNoTasks(){
 async function loadProperties(){
   try{
     const res = await window.storage.get(KEY_PROPS, false);
-    if(res && res.value){ state.properties = cleanProps(JSON.parse(res.value)); return; }
+    if(res && res.value){ state.properties = cleanProps(JSON.parse(res.value)); snapProps(state.properties); return; }
   }catch(e){}
   state.properties = DEFAULT_PROPERTIES;
 }
-async function saveProperties(){
-  try{ await window.storage.set(KEY_PROPS, JSON.stringify(state.properties), false); }catch(e){}
+// 숙소 목록 저장: 저장 직전에 서버의 최신 목록을 읽어서, '내가 바꾼 숙소'만 그 위에 덮어씀
+// (오래된 사본으로 다른 기기에서 입력한 내용을 지워버리는 일을 막음). 실패하면 화면에 알려줌.
+function miniToast(msg, bad){
+  try{
+    const d = document.createElement('div');
+    d.textContent = msg;
+    d.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:99999;padding:9px 16px;border-radius:20px;font-size:13.5px;font-weight:600;color:#fff;background:'+(bad?'#B3412F':'#2F3E36')+';box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:86vw;text-align:center;';
+    document.body.appendChild(d); setTimeout(()=>d.remove(), bad ? 4500 : 1600);
+  }catch(e){}
+}
+function snapProps(list){ const b = {}; (list||[]).forEach(p=>{ if(p && p.id) b[p.id] = JSON.stringify(p); }); state.propsBase = b; }
+async function refreshPropsFromServer(){
+  try{
+    window._bootCacheFirst = false;
+    const r = await window.storage.get(KEY_PROPS, false);
+    if(r && r.value){ state.properties = cleanProps(JSON.parse(r.value)); snapProps(state.properties); lastPropsRaw = r.value; return true; }
+  }catch(e){}
+  return false;
+}
+let _propsSaveChain = Promise.resolve();
+function saveProperties(){
+  const mine = state.properties;
+  const run = async ()=>{
+    try{
+      let toWrite = mine, merged = false;
+      if(state.propsBase && cloud && cloud.user){
+        let latest = null;
+        try{ window._bootCacheFirst = false; const r = await window.storage.get(KEY_PROPS, false); if(r && r.value) latest = cleanProps(JSON.parse(r.value)); }catch(e){}
+        if(Array.isArray(latest)){
+          const base = state.propsBase, mineBy = new Map(mine.map(p=>[p.id,p])), latestIds = new Set(latest.map(p=>p.id));
+          const out = [];
+          latest.forEach(p=>{
+            const m = mineBy.get(p.id);
+            if(!m){ if(!(p.id in base)) out.push(p); return; }   // 내가 지운 숙소는 제외, 남이 새로 만든 숙소는 유지
+            out.push(JSON.stringify(m) !== base[p.id] ? m : p);   // 내가 바꾼 숙소만 내 것, 나머지는 서버 최신
+          });
+          mine.forEach(m=>{ if(!latestIds.has(m.id) && !(m.id in base)) out.push(m); });   // 내가 새로 만든 숙소
+          toWrite = out; merged = JSON.stringify(out) !== JSON.stringify(mine);
+        }
+      }
+      const raw = JSON.stringify(toWrite);
+      await window.storage.set(KEY_PROPS, raw, false);
+      state.properties = toWrite; snapProps(toWrite); lastPropsRaw = raw;
+      if(merged) safeRender();
+      return true;
+    }catch(e){
+      miniToast('⚠️ 숙소 정보 저장 실패 — 네트워크 확인하고 다시 해줘', true);
+      return false;
+    }
+  };
+  _propsSaveChain = _propsSaveChain.then(run, run);
+  return _propsSaveChain;
 }
 let lastTodayRaw = null;
 // 비번이 '앞 손님 체크인 날짜'인 숙소(망원2룸): 바로 앞 일정 날짜를 찾아 MMDD* 로 제안
@@ -4320,8 +4373,9 @@ function openEditSheet(prop){
       const newId = 'p' + (Date.now());
       state.properties.push({id:newId, ...vals});
     }
-    await saveProperties();
+    const savedOk = await saveProperties();
     root.remove();
+    if(savedOk) miniToast('저장됨 ✓');
     let applied = 0;
     if(e.id){ try{ applied = await applyPropToFuture(e.id); }catch(err){} }
     render();
@@ -5384,7 +5438,7 @@ let lastPropsRaw = null, lastStaffRaw = null;
 function watchShared(){
   watchKey('props', KEY_PROPS, v=>{
     if(v === lastPropsRaw) return; lastPropsRaw = v;
-    try{ state.properties = v ? cleanProps(JSON.parse(v)) : []; }catch(e){}
+    try{ state.properties = v ? cleanProps(JSON.parse(v)) : []; snapProps(state.properties); }catch(e){}
     safeRender();
   });
   watchKey('staff', 'staff:list', v=>{
