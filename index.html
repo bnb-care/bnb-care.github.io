@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-54';
+const APP_BUILD = '1102-57';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3843,7 +3843,7 @@ function renderToday(){
     if(!isAdmin()) return renderScheduleCalendar() + `<div class="empty">${renderDateLabel()}<br>아직 등록된 일정이 없어.</div>`;
     return (activeStaff().length ? '<button class="pill-btn" id="openSend" style="width:100%;margin-bottom:10px;">🌙 직원에게 일정 없음 알리기</button>' : '') + renderPickerBody('create');
   }
-  return renderScheduleCalendar() + (isAdmin() ? renderMorningBanner() : '') + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
+  return renderScheduleCalendar() + renderTomorrowLaundry() + (isAdmin() ? renderMorningBanner() : '') + renderScheduleCards() + (isAdmin() && CLOUD_ENABLED ? '<div style="display:flex;gap:8px;justify-content:center;margin:14px 0 4px;"><button class="pill-btn" id="histBtn">🕘 수정 기록</button></div>' : '');
 }
 
 // 당일 체크인(🔴)은 항상 맨 위로 (그 안에서는 저장된 순서 유지)
@@ -3862,6 +3862,49 @@ function loadMorningPrev(ds){
     state.morningPrev = { ds, pds, ids };
     if(ids.length && state.selectedDate === ds && state.tab === 'today') render();
   }).catch(()=>{ state.morningPrev = { ds, ids: [] }; });
+}
+// 내일 세탁: 내일 일정 숙소의 🧺 세탁 완료 / 🚚 전달이 오늘 안에 끝났는지 오늘 탭 위에서 확인·체크
+function tmrDs(ds){ const d = new Date(Number(ds.slice(0,4)), Number(ds.slice(5,7))-1, Number(ds.slice(8,10))+1); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+function loadTomorrowLaundry(ds){
+  const tds = tmrDs(ds);
+  const keep = state.tmrLaundry && state.tmrLaundry.ds === ds ? state.tmrLaundry : null;
+  window.storage.get('today:'+tds, false).then(x=>{
+    let rec = null; try{ if(x && x.value) rec = JSON.parse(x.value); }catch(e){}
+    const raw = x && x.value || '';
+    const changed = !keep || keep.raw !== raw;
+    state.tmrLaundry = { ds, tds, rec, raw, t: Date.now() };
+    if(changed && state.selectedDate === ds && state.tab === 'today') safeRender();
+  }).catch(()=>{ if(!keep) state.tmrLaundry = { ds, tds, rec:null, raw:'', t: Date.now() }; });
+}
+function renderTomorrowLaundry(){
+  const ds = state.selectedDate; if(!ds || ds !== todayStr()) return '';
+  const tl = state.tmrLaundry;
+  if(!tl || tl.ds !== ds){ state.tmrLaundry = null; loadTomorrowLaundry(ds); return ''; }
+  if(Date.now() - tl.t > 20000){ tl.t = Date.now(); loadTomorrowLaundry(ds); }
+  const rec = tl.rec; if(!rec || !(rec.propertyIds||[]).length) return '';
+  const isWash = t=>t.text==='세탁 완료', isDel = t=>t.text.includes('세탁') && t.text.includes('전달');
+  const ver = rec.laundryVerify || {};
+  const rows = [];
+  (rec.propertyIds||[]).forEach(id=>{
+    const p = propById(id); if(!p) return;
+    const tk = (rec.tasks||{})[id] || []; const w = tk.find(isWash);
+    if(!w) return;
+    rows.push({ id, name:p.name, w, ok1: !!w.done, v: ver[id] });
+  });
+  if(!rows.length) return '';
+  const n1 = rows.filter(r=>r.ok1).length, n2 = rows.filter(r=>r.v).length;
+  const all2 = n2 === rows.length;
+  const chk = state.todayRecord && state.todayRecord.tmrLaundryCheck;
+  const hm = t=>{ const x = new Date(t); return String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0'); };
+  const btn = (r,kind,t)=> t ? `<button class="ps-chip ${t.done?'on':''}" data-tl="${esc(r.id)}|${kind}" style="font-size:16px;padding:4px 9px;">${kind==='w'?'🧺':'🚚'}</button>` : '';
+  const list = all2 ? '' : rows.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13.5px;border-top:1px solid var(--paper-line);"><span style="${r.v?'opacity:.55;':''}">${esc(r.name)}</span><span style="display:flex;gap:6px;align-items:center;">${btn(r,'w',r.w)}<button class="ps-chip ${r.v?'on':''}" data-tl2="${esc(r.id)}" title="실제로 세탁 끝났는지 직접 확인" style="font-size:16px;padding:4px 9px;margin-left:4px;">✔️</button></span></div>`).join('');
+  return `<div class="prop-card open" style="margin-bottom:10px;${all2?'':'border-color:var(--clay);'}"><div style="padding:10px 12px;">
+    <div style="font-weight:700;font-size:14px;margin-bottom:${list?4:0}px;">🧺 내일 세탁 <span style="font-weight:600;">1차 ${n1}/${rows.length} · 2차 ${n2}/${rows.length}</span>${all2?' <span style="color:var(--teal);">✓ 확인 끝</span>':''}</div>
+    ${list}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:12px;color:var(--ink-soft);">
+      <span>${chk ? '✓ '+hm(chk.at)+' '+esc(chk.by||'')+' 마지막 확인'+(chk.left?' (미확인 '+chk.left+'곳)':'') : (all2?'':'✔️ = 실제로 끝난 걸 직접 확인')}</span>
+      <button class="pill-btn" data-tl-confirm="1">마지막 확인 완료</button></div>
+  </div></div>`;
 }
 function renderMorningBanner(){
   const ds = state.selectedDate; if(!ds) return '';
@@ -4844,6 +4887,45 @@ function attachHandlers(){
     try{ await applyPropToFuture(pid, true); }catch(e){} render();
   });
   document.querySelectorAll('[data-ps-morning]').forEach(el=> el.onclick = async (ev)=>{ ev.stopPropagation(); const r = state.todayRecord; r.morningCheck = r.morningCheck || {}; const k = el.dataset.psMorning; if(r.morningCheck[k]) delete r.morningCheck[k]; else r.morningCheck[k] = true; await saveTodayRecord(); render(); });
+  document.querySelectorAll('[data-tl]').forEach(el=> el.onclick = async ()=>{
+    const [id, kind] = el.dataset.tl.split('|'); const tl = state.tmrLaundry; if(!tl) return;
+    try{
+      const x = await window.storage.get('today:'+tl.tds, false); if(!x || !x.value) return;
+      const r = JSON.parse(x.value); const tk = (r.tasks||{})[id] || [];
+      const t = tk.find(q=>q.text==='세탁 완료'); if(!t) return;
+      if(t.done && (r.laundryVerify||{})[id]){ if(!confirm('2차 확인까지 된 숙소야. 세탁 완료를 취소하면 2차 확인도 같이 지워져.')) return; delete r.laundryVerify[id]; }
+      t.done = !t.done;
+      if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); } else { delete t.by; delete t.at; }
+      const raw = JSON.stringify(r);
+      await window.storage.set('today:'+tl.tds, raw, false);
+      state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
+    }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
+  });
+  document.querySelectorAll('[data-tl2]').forEach(el=> el.onclick = async ()=>{
+    const id = el.dataset.tl2, tl = state.tmrLaundry; if(!tl) return;
+    try{
+      const x = await window.storage.get('today:'+tl.tds, false); if(!x || !x.value) return;
+      const r = JSON.parse(x.value); const tk = (r.tasks||{})[id] || [];
+      const w = tk.find(q=>q.text==='세탁 완료');
+      r.laundryVerify = r.laundryVerify || {};
+      if(r.laundryVerify[id]) delete r.laundryVerify[id];
+      else {
+        if(!w || !w.done){ miniToast('1차 체크(🧺 세탁 완료)가 먼저 필요해', true); return; }
+        r.laundryVerify[id] = { by: (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나', at: Date.now() };
+      }
+      const raw = JSON.stringify(r);
+      await window.storage.set('today:'+tl.tds, raw, false);
+      state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
+    }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
+  });
+  document.querySelectorAll('[data-tl-confirm]').forEach(el=> el.onclick = async ()=>{
+    const tl = state.tmrLaundry, r = state.todayRecord; if(!tl || !r) return;
+    const isWash = t=>t.text==='세탁 완료', isDel = t=>t.text.includes('세탁') && t.text.includes('전달');
+    let left = 0; ((tl.rec&&tl.rec.propertyIds)||[]).forEach(id=>{ const tk = ((tl.rec.tasks||{})[id])||[]; if(!tk.some(isWash)) return; if(!((tl.rec.laundryVerify||{})[id])) left++; });
+    if(left && !confirm('2차 확인이 안 된 곳이 '+left+'곳 있어. 그래도 마지막 확인으로 남길까?')) return;
+    r.tmrLaundryCheck = { by: (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나', at: Date.now(), left };
+    await saveTodayRecord(); render();
+  });
   document.querySelectorAll('[data-morning-done]').forEach(el=> el.onclick = async ()=>{
     const id = el.dataset.morningDone, mp = state.morningPrev; if(!mp || !mp.pds) return;
     try{
