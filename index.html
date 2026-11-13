@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-64';
+const APP_BUILD = '1102-65';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3029,7 +3029,7 @@ const OWNER_COLORS = {
 // 대표가 비어 있는 숙소: 전화번호 또는 이름으로 색 지정 (순서 = 숙소 탭 정렬 순서)
 const GROUP_COLORS = [
   {key:'잇다',   bg:'#E4DCF4', bar:'#9B86D6', phone:'01091409067', name:/^창천(동)?\s*잇다/},
-  {key:'망원3룸', bg:'#D5F0EE', bar:'#4DB6AC', name:/^망원(동)?\s*3룸/},
+  {key:'망원3룸', bg:'#D5F0EE', bar:'#4DB6AC', name:/^망원(동)?\s*(3룸|[0-9]+층)/},
   {key:'스테이위드', bg:'#EFE3D2', bar:'#C49A6C', name:/^스테이\s*위드/},
 ];
 function groupOf(p){
