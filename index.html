@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-67';
+const APP_BUILD = '1102-69';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -953,7 +953,7 @@ function offNamesOn(ds){ return activeStaff().filter(st=>st.role==='manager' && 
 function offFullNames(ds){ return activeStaff().filter(st=>st.role==='manager' && (st.offDates||[]).includes(ds)).map(st=>st.name); }
 function offLineHtml(ds){ const a = offFullNames(ds); return a.length ? `<div class="off-line" style="margin:6px 0;padding:6px 10px;border-radius:8px;background:#FBF1D6;color:#8a6d1f;font-size:13px;font-weight:600;">🌴 휴무: ${esc(a.join(', '))}</div>` : ''; }
 function offNamesHtml(ds){ const a = offNamesOn(ds); return a.length ? `<span class="off" title="휴무: ${esc(a.join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; }
-function staffOffToday(st){ return (st.offDates||[]).includes(state.selectedDate); }
+function staffOffToday(st){ return (st.offDates||[]).includes(state.selectedDate) || availOffOn(st, state.selectedDate)==='all'; }
 function staffUnavailable(st){
   if(staffOffToday(st)) return true; // 휴무일
   if(st.onRequest) return true; // 요일 미정: 연락 온 날만 배정
@@ -965,7 +965,9 @@ function warningsFor(st, p){
   const w = [];
   if(!st || !p) return w;
   if(st.onRequest) w.push('연락 온 날만 배정 (요일 미정)');
+  else if(availOffOn(st, state.selectedDate)==='all') w.push('직원이 이 날 불가로 입력했어');
   else if(staffUnavailable(st)) w.push(`${DAY_NAMES[selectedWeekday()]}요일은 근무 불가`);
+  { const av = availOffOn(st, state.selectedDate); if(av==='am') w.push('직원 입력: 오전만 가능'); if(av==='pm') w.push('직원 입력: 오후만 가능'); }
   (st.forbidden||[]).forEach(k=>{
     if(k && (p.name||'').includes(k)) w.push(`${st.name}님은 ${k} 배정 금지`);
   });
@@ -1045,6 +1047,7 @@ function openStaffEditSheet(st){
         </div>
         <div id="sf_offlist" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div></div>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:6px 0;"><input type="checkbox" id="sf_req" ${cur.onRequest?'checked':''}>요일 미정: 연락 온 날만 배정 (평소엔 불가로 처리)</label>
+      <div class="field" style="margin-top:6px;"><label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:0 0 4px;"><input type="checkbox" id="sf_hourly" ${cur.hourly?'checked':''}>시급제 (가능일 링크에서 청소 시작/끝을 기록)</label><input id="sf_rate" inputmode="numeric" placeholder="시급 (원)" value="${esc(String(cur.hourlyRate||''))}"></div>
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:6px 0;"><input type="checkbox" id="sf_mgr" ${cur.role==='manager'?'checked':''}>관리직 (직원 탭에서 따로 묶어서 보여줘 · 일정 없음 알림 제외)</label>
       <div class="sheet-actions">
         <button class="cancel-btn" id="sf_cancel">취소</button>
@@ -1090,10 +1093,11 @@ function openStaffEditSheet(st){
     const obj = { id:cur.id, inactive:!!cur.inactive, role:(document.getElementById('sf_mgr').checked?'manager':''), name, phone:document.getElementById('sf_phone').value.trim(), days,
       endTime:document.getElementById('sf_end').value.trim(),
       forbidden:document.getElementById('sf_forbid').value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),
-      onRequest:document.getElementById('sf_req').checked, offDates: offs };
+      onRequest:document.getElementById('sf_req').checked, offDates: offs, availToken: cur.availToken||'', hourly: document.getElementById('sf_hourly').checked, hourlyRate: Number(String(document.getElementById('sf_rate').value).replace(/[^0-9]/g,''))||0 };
     const i = state.staff.findIndex(x=>x.id===cur.id);
     if(i>=0) state.staff[i]=obj; else state.staff.push(obj);
     await saveStaff();
+    syncAvailMeta(obj);
     root.remove();
     const o=document.getElementById('overlay'); if(o) o.remove();
     render();
@@ -1933,6 +1937,129 @@ function renderAssignStats(){
     <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;">전체 ${st.total}건 중 ${st.total-st.unassigned}건 배정${st.unassigned?` · <b style="color:var(--clay);">배정 안 된 숙소 ${st.unassigned}건</b>`:''}<br>이름을 누르면 자주 맡은 숙소가 보여. 배정을 입력한 날만 집계돼.</div>
   </div></div>`;
 }
+// ===== 직원 가능일 (직원이 avail.html 에서 입력 → Firestore avail/{전용토큰}) =====
+// 직원은 일정·숙소 데이터에 접근할 수 없고, 이 문서 하나만 읽고 고칠 수 있어
+const AVAIL_PAGE = 'https://bnb-care.github.io/avail.html';
+function newAvailToken(){ const a = new Uint8Array(18); crypto.getRandomValues(a); return Array.from(a).map(x=>x.toString(36).padStart(2,'0')).join('').slice(0,26); }
+function availLink(st){ return AVAIL_PAGE+'?t='+encodeURIComponent(st.availToken); }
+function availOf(st){ return (state.avail||{})[st.id] || null; }
+function availOffOn(st, ds){ const a = availOf(st); return (a && a.off && a.off[ds]) || ''; }
+function availIsOpen(){ if(state.availOpen === undefined){ let v = '1'; try{ v = localStorage.getItem('pref:availOpen') || '1'; }catch(e){} state.availOpen = v !== '0'; } return state.availOpen; }
+async function loadAvail(force){
+  if(!(CLOUD_ENABLED && cloud && cloud.user) || !isAdmin()) return;
+  const now = Date.now(); if(!force && state._availT && now - state._availT < 60000) return; state._availT = now;
+  const list = (state.staff||[]).filter(s=>s.availToken && !s.inactive); if(!list.length) return;
+  const next = { ...(state.avail||{}) }; let changed = false;
+  await Promise.all(list.map(async s=>{ try{
+    const sn = await cloud.fn.getDoc(cloud.fn.doc(cloud.db, 'avail', s.availToken));
+    if(sn.exists()){ const d = sn.data(); const v = { off:d.off||{}, note:d.note||'', clock:d.clock||{}, confirmedAt:d.confirmedAt||0, updatedAt:d.updatedAt||0 };
+      if(JSON.stringify(v) !== JSON.stringify(next[s.id])){ next[s.id] = v; changed = true; } }
+  }catch(e){} }));
+  state.avail = next;
+  if(changed && (state.tab==='staff' || state.tab==='today')) safeRender();
+}
+async function syncAvailMeta(st){ try{ if(CLOUD_ENABLED && cloud && cloud.user && st.availToken) await cloud.fn.updateDoc(cloud.fn.doc(cloud.db,'avail',st.availToken), { name:st.name, hourly:!!st.hourly }); }catch(e){} }
+async function sendAvailLink(id){
+  const st = staffById(id); if(!st) return;
+  try{
+    const tok = st.availToken || newAvailToken();
+    const ref = cloud.fn.doc(cloud.db, 'avail', tok);
+    const sn = await cloud.fn.getDoc(ref);
+    if(!sn.exists()) await cloud.fn.setDoc(ref, { staffId:st.id, name:st.name, hourly:!!st.hourly, off:{}, note:'', createdAt:Date.now() });
+    else await cloud.fn.updateDoc(ref, { name:st.name, hourly:!!st.hourly });
+    if(!st.availToken){ st.availToken = tok; await saveStaff(); }
+  }catch(e){ miniToast('⚠️ 링크를 못 만들었어 (Firebase 규칙에 avail 설정이 됐는지 확인해줘)', true); return; }
+  const txt = `${st.name}님, 근무 가능일 입력 링크예요.\n일하기 어려운 날만 눌러서 표시하고 "입력 완료"를 눌러주세요 🙏\n(안 누른 날은 모두 가능으로 알고 있을게요)\n\n${availLink(st)}\n\n※ ${st.name}님 전용 링크예요. 다른 분께 전달하지 말아주세요.`;
+  await shareOrCopy(txt);
+}
+function availCell(st, ds, wd){
+  const v = availOffOn(st, ds);
+  if(v === 'all') return '<span style="color:#fff;background:var(--clay);border-radius:6px;padding:1px 5px;font-size:12px;font-weight:700;">✕</span>';
+  if(v === 'am') return '<span style="color:#7a5a00;background:#FBF1D6;border-radius:6px;padding:1px 4px;font-size:10px;font-weight:700;white-space:nowrap;">오전</span>';
+  if(v === 'pm') return '<span style="color:#7a5a00;background:#FBF1D6;border-radius:6px;padding:1px 4px;font-size:10px;font-weight:700;white-space:nowrap;">오후</span>';
+  if((st.offDates||[]).includes(ds)) return '<span style="color:var(--ink-soft);font-size:11px;">휴</span>';
+  const days = (st.days && st.days.length) ? st.days : [0,1,2,3,4,5,6];
+  if(st.onRequest || !days.includes(wd)) return '<span style="color:var(--ink-soft);opacity:.5;">–</span>';
+  return '<span style="color:var(--teal);opacity:.55;">○</span>';
+}
+function availCan(st, ds, wd){
+  if(availOffOn(st, ds) === 'all' || (st.offDates||[]).includes(ds)) return false;
+  const days = (st.days && st.days.length) ? st.days : [0,1,2,3,4,5,6];
+  return !st.onRequest && days.includes(wd);
+}
+function renderAvailPanel(){
+  if(!(CLOUD_ENABLED && isAdmin())) return '';
+  loadAvail();
+  const open = availIsOpen();
+  const staff = activeStaff().filter(st=>st.role!=='manager');
+  const head = `<div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-weight:700;font-size:15px;">📅 직원 가능일</div><div style="display:flex;gap:6px;">${open?'<button class="pill-btn" id="availRefresh" aria-label="새로고침">↻</button>':''}<button class="pill-btn" id="availToggle">${open?'접기 ▴':'펼치기 ▾'}</button></div></div>`;
+  if(!open) return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">${head}</div></div>`;
+  const days = []; const base = new Date(); for(let i=0;i<14;i++){ const d = new Date(base.getFullYear(), base.getMonth(), base.getDate()+i); days.push({ ds:ymd(d.getFullYear(), d.getMonth(), d.getDate()), wd:d.getDay(), m:d.getMonth()+1, d:d.getDate() }); }
+  const th = days.map(x=>`<th style="padding:3px 4px;font-size:11px;font-weight:600;text-align:center;white-space:nowrap;${x.wd===0?'color:var(--clay);':x.wd===6?'color:#3b6ea5;':''}">${x.m===days[0].m&&x.d!==1&&x.ds!==days[0].ds?'':x.m+'/'}${x.d}<br><span style="font-weight:500;">${DAY_NAMES[x.wd]}</span></th>`).join('');
+  const now = Date.now();
+  const stamp = st=>{
+    if(!st.availToken) return '<span style="color:var(--ink-soft);font-size:11px;">링크 없음</span>';
+    const a = availOf(st); const c = a && a.confirmedAt;
+    if(!c) return '<span style="color:var(--clay);font-size:11px;">미입력</span>';
+    const x = new Date(c), t = (x.getMonth()+1)+'/'+x.getDate();
+    return (now - c > 7*86400000) ? `<span style="color:var(--clay);font-size:11px;">${t} 이후 없음</span>` : `<span style="color:var(--teal);font-size:11px;">${t} 입력 ✓</span>`;
+  };
+  const rows = staff.map(st=>`<tr style="border-top:1px solid var(--paper-line);">
+    <td style="position:sticky;left:0;background:#fff;padding:5px 6px 5px 0;min-width:84px;z-index:1;"><div style="font-weight:700;font-size:13px;">${esc(st.name)}</div>${stamp(st)}<div><button class="pill-btn" data-avail-link="${esc(st.id)}" title="가능일 입력 링크 보내기" style="white-space:nowrap;font-size:11px;padding:2px 8px;margin-top:3px;">🔗 ${st.availToken?'링크 보내기':'링크 만들기'}</button></div></td>
+    ${days.map(x=>`<td style="text-align:center;padding:3px 2px;">${availCell(st, x.ds, x.wd)}</td>`).join('')}
+    </tr>`).join('');
+  const cnt = `<tr style="border-top:2px solid var(--paper-line);"><td style="position:sticky;left:0;background:#fff;font-size:12px;font-weight:700;padding:5px 6px 5px 0;">가능 인원</td>${days.map(x=>{ const n = staff.filter(st=>availCan(st, x.ds, x.wd)).length; return `<td style="text-align:center;font-size:12px;font-weight:700;${n<=1?'color:var(--clay);':''}">${n}</td>`; }).join('')}</tr>`;
+  const notes = staff.filter(st=>{ const a=availOf(st); return a && a.note && a.note.trim(); }).map(st=>`<div style="font-size:12px;margin-top:4px;"><b>${esc(st.name)}</b> · ${esc(availOf(st).note)}</div>`).join('');
+  return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">${head}
+    <div style="font-size:11px;color:var(--ink-soft);margin:4px 0 6px;">✕ 불가 · 오전/오후는 그 시간만 가능 · ○ 가능 · – 요일 밖 · 직원이 링크에서 직접 입력해</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="border-collapse:collapse;width:100%;"><thead><tr><th></th>${th}</tr></thead><tbody>${rows}${cnt}</tbody></table></div>
+    ${notes}</div></div>`;
+}
+// ===== 시급제 직원 근무 시간 (직원이 링크에서 청소 시작/끝 → avail/{토큰}.clock) =====
+function hmToMin(t){ const m = /^(\d{1,2}):(\d{2})$/.exec(String(t||'')); return m ? Number(m[1])*60+Number(m[2]) : null; }
+function clockMin(c){ if(!c) return 0; const a = hmToMin(c.in), b = hmToMin(c.out); return (a!=null && b!=null && b>a) ? b-a : 0; }
+function fmtDur(min){ const h = Math.floor(min/60), m = min%60; return h ? h+'시간'+(m?' '+m+'분':'') : m+'분'; }
+function hourlyMonth(){ if(!state.hourlyMonth){ const d = new Date(); state.hourlyMonth = d.getFullYear()+'-'+pad2(d.getMonth()+1); } return state.hourlyMonth; }
+async function editHourlyDay(sid, ds){
+  const st = staffById(sid); if(!st || !st.availToken) return;
+  const a = availOf(st) || { off:{}, clock:{} }; const clock = { ...(a.clock||{}) }; const cur = clock[ds] || {};
+  const v = prompt(`${+ds.slice(5,7)}/${+ds.slice(8)} 시작-끝 시간 (예: 10:00-15:30)\n비우면 그날 기록 삭제`, (cur.in||'')+(cur.in||cur.out?'-':'')+(cur.out||''));
+  if(v === null) return;
+  const t = v.trim();
+  if(!t) delete clock[ds];
+  else { const m = /^(\d{1,2}):(\d{2})\s*[-~]\s*(\d{1,2}:\d{2})?$/.exec(t); const m2 = /^(\d{1,2}):(\d{2})$/.exec(t);
+    if(!m && !m2){ alert('형식이 안 맞아. 예: 10:00-15:30'); return; }
+    const inT = (m||m2)[1].padStart(2,'0')+':'+(m||m2)[2]; const outT = m && m[3] ? m[3].padStart(5,'0') : '';
+    clock[ds] = outT ? { in:inT, out:outT } : { in:inT }; }
+  try{ await cloud.fn.updateDoc(cloud.fn.doc(cloud.db,'avail',st.availToken), { clock });
+    state.avail = { ...(state.avail||{}), [sid]: { ...a, clock } }; miniToast('저장됨 ✓'); render(); }
+  catch(e){ miniToast('⚠️ 저장 실패', true); }
+}
+function renderHourlyPanel(){
+  if(!(CLOUD_ENABLED && isAdmin())) return '';
+  const list = activeStaff().filter(st=>st.hourly); if(!list.length) return '';
+  const ym = hourlyMonth(); const [Y,M] = ym.split('-').map(Number);
+  const nav = d=>{ const x = new Date(Y, M-1+d, 1); return x.getFullYear()+'-'+pad2(x.getMonth()+1); };
+  const body = list.map(st=>{
+    const a = availOf(st), clock = (a && a.clock) || {};
+    const days = Object.keys(clock).filter(ds=>ds.startsWith(ym)).sort().reverse();
+    const worked = days.filter(ds=>clockMin(clock[ds])>0);
+    const total = worked.reduce((n,ds)=>n+clockMin(clock[ds]),0);
+    const rate = Number(st.hourlyRate)||0;
+    const pay = rate ? Math.round(total/60*rate) : 0;
+    const rows = days.map(ds=>{ const c = clock[ds], d = new Date(Number(ds.slice(0,4)), Number(ds.slice(5,7))-1, Number(ds.slice(8)));
+      const mins = clockMin(c);
+      return `<div data-hourly-edit="${esc(st.id)}|${ds}" style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-top:1px solid var(--paper-line);cursor:pointer;"><span>${+ds.slice(5,7)}/${+ds.slice(8)}(${DAY_NAMES[d.getDay()]})</span><span>${esc(c.in||'?')} ~ ${c.out?esc(c.out):'<b style="color:var(--clay);">진행 중</b>'}${mins?' · '+fmtDur(mins):''}</span></div>`; }).join('');
+    return `<div style="margin-top:10px;"><div style="display:flex;justify-content:space-between;align-items:baseline;"><b style="font-size:14px;">${esc(st.name)}</b><span style="font-size:13px;">${worked.length}일 · ${fmtDur(total)}${rate?` · <b>${pay.toLocaleString()}원</b>`:' · <span style="color:var(--clay);">시급 미설정</span>'}</span></div>
+      ${!st.availToken?'<div style="font-size:12px;color:var(--ink-soft);">링크를 먼저 만들어줘</div>':''}
+      ${rows || '<div style="font-size:12px;color:var(--ink-soft);margin-top:4px;">이 달 기록 없음</div>'}</div>`;
+  }).join('');
+  return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-weight:700;font-size:15px;">⏱ 시급제 근무</div>
+      <div style="display:flex;gap:6px;align-items:center;"><button class="pill-btn" data-hourly-nav="${nav(-1)}">◀</button><span style="font-size:13px;font-weight:700;">${M}월</span><button class="pill-btn" data-hourly-nav="${nav(1)}">▶</button></div></div>
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">직원이 링크에서 누른 시작·끝 시간이야. 줄을 누르면 시간을 고칠 수 있어.</div>
+    ${body}</div></div>`;
+}
 function renderStaffTab(){
   const avail = activeStaff().filter(st=>!staffUnavailable(st));
   const unavail = activeStaff().filter(st=>staffUnavailable(st));
@@ -1973,6 +2100,8 @@ function renderStaffTab(){
   return `
     ${renderScheduleCalendar()}
     ${attend}
+    ${renderAvailPanel()}
+    ${renderHourlyPanel()}
     ${renderAssignStats()}
     ${state.staff.length ? avail.filter(st=>st.role!=='manager').map(card).join('') + (unavail.filter(st=>st.role!=='manager').length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.filter(st=>st.role!=='manager').map(card).join(''):'') + (activeStaff().some(st=>st.role==='manager') ? `<div style="font-size:12px;color:var(--ink-soft);margin:14px 0 6px;font-weight:700;">관리직</div>`+activeStaff().filter(st=>st.role==='manager').map(card).join('') : '') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
     ${state.staff.some(st=>st.inactive) ? `<div style="margin-top:12px;">
@@ -2026,6 +2155,11 @@ function attachStaffHandlers(){
   document.querySelectorAll('[data-staff-edit]').forEach(b=> b.onclick = ()=> openStaffEditSheet(staffById(b.dataset.staffEdit)));
   document.querySelectorAll('[data-staff-msg]').forEach(b=> b.onclick = ()=> openPersonalSheet(b.dataset.staffMsg));
   const nb=document.getElementById('noticeBtn'); if(nb) nb.onclick = openNoticeSheet;
+  document.querySelectorAll('[data-hourly-edit]').forEach(b=> b.onclick = ()=>{ const [sid, ds] = b.dataset.hourlyEdit.split('|'); editHourlyDay(sid, ds); });
+  document.querySelectorAll('[data-hourly-nav]').forEach(b=> b.onclick = ()=>{ state.hourlyMonth = b.dataset.hourlyNav; render(); });
+  document.querySelectorAll('[data-avail-link]').forEach(b=> b.onclick = ()=> sendAvailLink(b.dataset.availLink));
+  { const t = document.getElementById('availToggle'); if(t) t.onclick = ()=>{ state.availOpen = !availIsOpen(); try{ localStorage.setItem('pref:availOpen', state.availOpen?'1':'0'); }catch(e){} render(); };
+    const r = document.getElementById('availRefresh'); if(r) r.onclick = ()=>{ loadAvail(true); miniToast('불러오는 중…'); }; }
   const a=document.getElementById('staffAddBtn'); if(a) a.onclick = ()=> openStaffEditSheet(null);
   { const t=document.getElementById('asToggle'); if(t) t.onclick = ()=>{ state.asOpen = !state.asOpen; if(state.asOpen) loadAssignStats(); else render(); };
     document.querySelectorAll('[data-as-view]').forEach(b=> b.onclick = ()=>{ state.asView = state.asView==='prop' ? 'staff' : 'prop'; render(); });
@@ -3956,6 +4090,7 @@ function renderMorningBanner(){
   </div></div>`;
 }
 function renderScheduleCards(){
+  try{ loadAvail(); }catch(e){}
   const ids = state.todayRecord.propertyIds;
   const taskMap = state.todayRecord.tasks;
   const doneCount = ids.filter(id => taskMap[id].every(t=>t.done)).length;
