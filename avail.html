@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>근무 가능일 입력</title>
+<style>
+  :root{ --bg:#EEF1EA; --card:#fff; --ink:#1f2a24; --soft:#6b7568; --line:#dfe3d8; --teal:#2f7a67; --clay:#b4432c; --amber:#f6e7b6; --amber-ink:#7a5a00; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif; line-height:1.5; }
+  .wrap{ max-width:520px; margin:0 auto; padding:18px 16px 40px; }
+  h1{ font-size:20px; margin:6px 0 2px; }
+  .sub{ color:var(--soft); font-size:14px; margin:0 0 14px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .legend{ display:flex; flex-wrap:wrap; gap:8px 12px; font-size:13px; color:var(--soft); margin-top:8px; }
+  .lg{ display:inline-flex; align-items:center; gap:5px; }
+  .dot{ width:18px; height:18px; border-radius:5px; display:inline-block; border:1px solid var(--line); }
+  .mhead{ font-weight:700; margin:12px 0 6px; font-size:15px; }
+  .grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
+  .dow{ text-align:center; font-size:12px; color:var(--soft); padding-bottom:2px; }
+  .dow.s{ color:var(--clay); } .dow.t{ color:#3b6ea5; }
+  .day{ border:1px solid var(--line); background:#fff; border-radius:10px; padding:0; min-height:54px; font-size:15px; font-weight:600; color:var(--ink); display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; font-family:inherit; }
+  .day small{ font-size:11px; font-weight:700; min-height:14px; }
+  .day.empty{ visibility:hidden; }
+  .day.past{ opacity:.35; cursor:default; }
+  .day.today{ border-color:var(--teal); box-shadow:0 0 0 1px var(--teal) inset; }
+  .day.all{ background:var(--clay); border-color:var(--clay); color:#fff; }
+  .day.am,.day.pm{ background:var(--amber); border-color:#e5cf85; color:var(--amber-ink); }
+  textarea{ width:100%; min-height:70px; border:1px solid var(--line); border-radius:10px; padding:10px; font:inherit; font-size:15px; resize:vertical; }
+  .btn{ width:100%; border:0; border-radius:12px; background:var(--teal); color:#fff; font:inherit; font-size:17px; font-weight:700; padding:14px; cursor:pointer; margin-top:6px; }
+  .btn:disabled{ opacity:.5; }
+  .msg{ text-align:center; font-size:14px; margin-top:10px; min-height:20px; }
+  .msg.ok{ color:var(--teal); font-weight:700; } .msg.err{ color:var(--clay); font-weight:700; }
+  .big{ text-align:center; padding:40px 10px; color:var(--soft); }
+  .dirty{ color:var(--clay); font-size:13px; text-align:center; min-height:18px; margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="big">불러오는 중…</div></div>
+<script type="module">
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB3KSGfToHr1oPxDJTk7sAYof7pKelfNGY",
+  authDomain: "bnbcare-d1603.firebaseapp.com",
+  projectId: "bnbcare-d1603",
+  storageBucket: "bnbcare-d1603.firebasestorage.app",
+  messagingSenderId: "454006613109",
+  appId: "1:454006613109:web:589a7ed412af59e358843c"
+};
+const FB_VER = '10.14.1';
+const app = document.getElementById('app');
+const DOW = ['일','월','화','수','목','금','토'];
+const pad = n => String(n).padStart(2,'0');
+const ymd = d => d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const WEEKS = 8;
+const ORDER = ['', 'all', 'am', 'pm'];
+const LABEL = { all:'불가', am:'오전만', pm:'오후만' };
+
+function fail(text){ app.innerHTML = '<div class="big">'+esc(text)+'</div>'; }
+
+const token = new URLSearchParams(location.search).get('t') || '';
+if(!token){ fail('링크가 올바르지 않아요. 받으신 링크를 다시 눌러주세요.'); }
+else main().catch(e=>{ console.error(e); fail('불러오지 못했어요. 잠시 뒤에 다시 열어보세요. (관리자에게 문의)'); });
+
+async function main(){
+  const base = 'https://www.gstatic.com/firebasejs/'+FB_VER;
+  const [appM, fsM] = await Promise.all([ import(base+'/firebase-app.js'), import(base+'/firebase-firestore.js') ]);
+  const db = fsM.getFirestore(appM.initializeApp(FIREBASE_CONFIG));
+  const ref = fsM.doc(db, 'avail', token);
+  const snap = await fsM.getDoc(ref);
+  if(!snap.exists()){ fail('링크가 올바르지 않아요. 관리자에게 새 링크를 요청해주세요.'); return; }
+  const data = snap.data();
+  const todayD = new Date(); const today = ymd(todayD);
+  const off = {}; Object.entries(data.off||{}).forEach(([k,v])=>{ if(k>=today && ORDER.includes(v) && v) off[k]=v; });
+  let note = data.note || '', dirty = false, saving = false, lastSaved = data.confirmedAt || 0;
+  const hourly = !!data.hourly; const clock = {};
+  const cutoff = ymd(new Date(todayD.getFullYear(), todayD.getMonth(), todayD.getDate()-62));
+  Object.entries(data.clock||{}).forEach(([k,v])=>{ if(k>=cutoff && v) clock[k] = { ...(v.in?{in:v.in}:{}), ...(v.out?{out:v.out}:{}) }; });
+  const nowHM = ()=>{ const x = new Date(); return pad(x.getHours())+':'+pad(x.getMinutes()); };
+  const toMin = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(t||''); return m ? +m[1]*60+ +m[2] : null; };
+  const dur = c => { const a = toMin(c&&c.in), b = toMin(c&&c.out); if(a==null||b==null||b<=a) return ''; const m=b-a; return (m>=60?Math.floor(m/60)+'시간 ':'')+(m%60?m%60+'분':''); };
+  async function saveClock(msgText){
+    const m = document.getElementById('cmsg'); if(m){ m.className='msg'; m.textContent='저장 중…'; }
+    try{ await fsM.updateDoc(ref, { clock: { ...clock }, updatedAt: Date.now() }); draw(); const m2=document.getElementById('cmsg'); if(m2){ m2.className='msg ok'; m2.textContent=msgText; } }
+    catch(e){ console.error(e); const m2=document.getElementById('cmsg'); if(m2){ m2.className='msg err'; m2.textContent='저장하지 못했어요. 다시 눌러주세요.'; } }
+  }
+
+  const start = new Date(todayD.getFullYear(), todayD.getMonth(), todayD.getDate() - todayD.getDay());
+  const months = []; // [{label, cells:[null|{ds,d,wd}]}]
+  for(let i=0;i<WEEKS*7;i++){
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate()+i);
+    const key = d.getFullYear()+'-'+pad(d.getMonth()+1);
+    let m = months[months.length-1];
+    if(!m || m.key!==key){ m = { key, label:(d.getMonth()+1)+'월', cells:[] }; months.push(m); for(let k=0;k<d.getDay();k++) m.cells.push(null); }
+    m.cells.push({ ds:ymd(d), d:d.getDate(), wd:d.getDay() });
+  }
+
+  const fmt = t => { const x = new Date(t); return (x.getMonth()+1)+'/'+x.getDate()+' '+pad(x.getHours())+':'+pad(x.getMinutes()); };
+  function draw(){
+    const cnt = Object.keys(off).length;
+    app.innerHTML = `
+      <h1>${esc(data.name||'')}님 근무 가능일</h1>
+      <p class="sub">일하기 어려운 날만 눌러서 표시해 주세요.<br>안 누른 날은 <b>모두 가능</b>으로 알고 있을게요.</p>
+      ${hourly ? (()=>{ const c = clock[today]||{}; const hist = Object.keys(clock).filter(k=>k<today).sort().reverse().slice(0,7);
+        return `<div class="card">
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px;">⏱ 오늘 근무 시간</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" id="cin" style="margin:0;${c.in?'background:#9fb8ae;':''}">청소 시작${c.in?'<br><small>'+c.in+'</small>':''}</button>
+          <button class="btn" id="cout" style="margin:0;background:#8a4b3a;${c.out?'opacity:.6;':''}">청소 끝${c.out?'<br><small>'+c.out+'</small>':''}</button>
+        </div>
+        ${(c.in||c.out)?`<div style="font-size:13px;color:var(--soft);margin-top:8px;">잘못 눌렀으면 아래에서 고쳐주세요.<br>시작 <input type="time" id="cin_t" value="${c.in||''}"> 끝 <input type="time" id="cout_t" value="${c.out||''}"> <button class="day" id="csave" style="display:inline-flex;min-height:0;padding:4px 10px;font-size:13px;">고치기</button></div>`:''}
+        <div class="msg" id="cmsg"></div>
+        ${hist.length?`<div style="font-size:13px;margin-top:6px;color:var(--soft);">${hist.map(k=>`<div>${+k.slice(5,7)}/${+k.slice(8)} · ${clock[k].in||'?'} ~ ${clock[k].out||'?'} ${dur(clock[k])}</div>`).join('')}</div>`:''}
+      </div>`; })() : ''}
+      <div class="card">
+        <div style="font-size:14px;"><b>날짜를 누를 때마다</b> 바뀌어요</div>
+        <div class="legend">
+          <span class="lg"><span class="dot"></span>가능</span>
+          <span class="lg"><span class="dot" style="background:var(--clay);border-color:var(--clay)"></span>종일 불가</span>
+          <span class="lg"><span class="dot" style="background:var(--amber);border-color:#e5cf85"></span>오전만 가능 / 오후만 가능</span>
+        </div>
+        ${months.map(m=>`<div class="mhead">${m.label}</div><div class="grid">
+          ${DOW.map((n,i)=>`<div class="dow ${i===0?'s':i===6?'t':''}">${n}</div>`).join('')}
+          ${m.cells.map(c=>{
+            if(!c) return '<div class="day empty"></div>';
+            const past = c.ds < today, v = off[c.ds]||'';
+            return `<button class="day ${past?'past':''} ${c.ds===today?'today':''} ${v}" data-ds="${c.ds}" ${past?'disabled':''}>${c.d}<small>${LABEL[v]||''}</small></button>`;
+          }).join('')}</div>`).join('')}
+      </div>
+      <div class="card">
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px;">전달할 말 (선택)</div>
+        <textarea id="note" maxlength="280" placeholder="예: 17일은 병원 때문에 오전만 가능해요">${esc(note)}</textarea>
+      </div>
+      <div class="dirty" id="dirty">${dirty?'아직 저장 전이에요. 아래 "입력 완료"를 눌러주세요':''}</div>
+      <button class="btn" id="save" ${saving?'disabled':''}>입력 완료</button>
+      <div class="msg ${lastSaved?'ok':''}" id="msg">${lastSaved?'마지막 입력 '+fmt(lastSaved)+' ✓':''}</div>
+      <div class="sub" style="text-align:center;margin-top:14px;">불가 표시한 날 ${cnt}일</div>`;
+    app.querySelectorAll('.day[data-ds]').forEach(b=> b.onclick = ()=>{
+      const ds = b.dataset.ds; const next = ORDER[(ORDER.indexOf(off[ds]||'')+1)%ORDER.length];
+      if(next) off[ds] = next; else delete off[ds];
+      dirty = true; const sc = window.scrollY; draw(); window.scrollTo(0, sc);
+    });
+    const ci = document.getElementById('cin'), co = document.getElementById('cout'), cs = document.getElementById('csave');
+    if(ci) ci.onclick = ()=>{ const c = clock[today] = clock[today] || {}; if(c.in && !confirm('이미 시작 시간이 있어요. '+nowHM()+'로 바꿀까요?')) return; c.in = nowHM(); saveClock('시작 '+c.in+' 저장됐어요 ✓'); };
+    if(co) co.onclick = ()=>{ const c = clock[today] = clock[today] || {}; if(!c.in && !confirm('시작을 안 누르셨어요. 끝 시간만 저장할까요?')) return; if(c.out && !confirm('이미 끝 시간이 있어요. '+nowHM()+'로 바꿀까요?')) return; c.out = nowHM(); saveClock('끝 '+c.out+' 저장됐어요 ✓'); };
+    if(cs) cs.onclick = ()=>{ const a = document.getElementById('cin_t').value, b = document.getElementById('cout_t').value; const c = clock[today] = clock[today] || {}; if(a) c.in = a; else delete c.in; if(b) c.out = b; else delete c.out; if(!c.in && !c.out) delete clock[today]; saveClock('고쳤어요 ✓'); };
+    const ta = document.getElementById('note'); ta.oninput = ()=>{ note = ta.value; if(!dirty){ dirty = true; document.getElementById('dirty').textContent = '아직 저장 전이에요. 아래 "입력 완료"를 눌러주세요'; } };
+    document.getElementById('save').onclick = async ()=>{
+      if(saving) return; saving = true; const btn = document.getElementById('save'), msg = document.getElementById('msg');
+      btn.disabled = true; msg.className = 'msg'; msg.textContent = '저장 중…';
+      try{
+        const now = Date.now();
+        await fsM.updateDoc(ref, { off: { ...off }, note: note.trim(), confirmedAt: now, updatedAt: now });
+        dirty = false; lastSaved = now; saving = false; draw();
+        document.getElementById('msg').textContent = '저장됐어요 ✓ ' + fmt(now);
+      }catch(e){
+        console.error(e); saving = false; btn.disabled = false; msg.className = 'msg err'; msg.textContent = '저장하지 못했어요. 인터넷을 확인하고 다시 눌러주세요.';
+      }
+    };
+  }
+  window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
+  draw();
+}
+</script>
+</body>
+</html>
