@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-66';
+const APP_BUILD = '1102-67';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3871,6 +3871,7 @@ function loadTomorrowLaundry(ds){
   window.storage.get('today:'+tds, false).then(x=>{
     let rec = null; try{ if(x && x.value) rec = JSON.parse(x.value); }catch(e){}
     const raw = x && x.value || '';
+    if(window._tlPend>0) return;
     const changed = !keep || keep.raw !== raw;
     state.tmrLaundry = { ds, tds, rec, raw, t: Date.now() };
     if(changed && state.selectedDate === ds && state.tab === 'today') safeRender();
@@ -4917,55 +4918,50 @@ function attachHandlers(){
     try{ await applyPropToFuture(pid, true); }catch(e){} render();
   });
   document.querySelectorAll('[data-ps-morning]').forEach(el=> el.onclick = async (ev)=>{ ev.stopPropagation(); const r = state.todayRecord; r.morningCheck = r.morningCheck || {}; const k = el.dataset.psMorning; if(r.morningCheck[k]) delete r.morningCheck[k]; else r.morningCheck[k] = true; await saveTodayRecord(); render(); });
-  const tlQueue = (fn)=>{ const p = (window._tlQ||Promise.resolve()).then(fn); window._tlQ = p.catch(()=>{}); return p; };
-  document.querySelectorAll('[data-tl]').forEach(el=> el.onclick = ()=> tlQueue(async ()=>{
-    const [id, kind] = el.dataset.tl.split('|'); const tl = state.tmrLaundry; if(!tl) return;
+  const tlQueue = (fn)=>{ window._tlPend = (window._tlPend||0)+1; const p = (window._tlQ||Promise.resolve()).then(fn).catch(()=>{}).then(()=>{ window._tlPend--; }); window._tlQ = p; return p; };
+  const tlName = ()=> (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나';
+  // 화면은 바로 바꾸고(내 폰 기준), 저장은 한 번에 하나씩 · 저장할 땐 서버의 최신 기록에 이 숙소 것만 덮어씀
+  const tlSave = (id)=> tlQueue(async ()=>{
     try{
-      const x = await window.storage.get('today:'+tl.tds, false); if(!x || !x.value) return;
-      const r = JSON.parse(x.value); const tk = (r.tasks||{})[id] || [];
-      const t = tk.find(q=>q.text==='세탁 완료'); if(!t) return;
-      if(t.done && (r.laundryVerify||{})[id]){ if(!confirm('2차 확인까지 된 숙소야. 세탁 완료를 취소하면 2차 확인도 같이 지워져.')) return; delete r.laundryVerify[id]; }
-      t.done = !t.done;
-      if(t.done){ t.by = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나'; t.at = Date.now(); } else { delete t.by; delete t.at; }
+      const tl = state.tmrLaundry; if(!tl || !tl.rec) return; const mine = tl.rec;
+      const x = await window.storage.get('today:'+tl.tds, false); let r = null;
+      try{ r = x && x.value ? JSON.parse(x.value) : null; }catch(e){}
+      if(!r) r = mine;
+      else {
+        r.tasks = r.tasks || {}; if(mine.tasks && mine.tasks[id]) r.tasks[id] = mine.tasks[id];
+        r.laundryVerify = r.laundryVerify || {};
+        if(mine.laundryVerify && mine.laundryVerify[id]) r.laundryVerify[id] = mine.laundryVerify[id]; else delete r.laundryVerify[id];
+      }
       const raw = JSON.stringify(r);
       await window.storage.set('today:'+tl.tds, raw, false);
-      state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
+      if(state.tmrLaundry === tl){ tl.raw = raw; tl.t = Date.now(); }
     }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
-  }));
+  });
+  document.querySelectorAll('[data-tl]').forEach(el=> el.onclick = ()=>{
+    const [id] = el.dataset.tl.split('|'); const tl = state.tmrLaundry; if(!tl || !tl.rec) return;
+    const r = tl.rec; const t = ((r.tasks||{})[id]||[]).find(q=>q.text==='세탁 완료'); if(!t) return;
+    if(t.done && (r.laundryVerify||{})[id]){ if(!confirm('2차 확인까지 된 숙소야. 세탁 완료를 취소하면 2차 확인도 같이 지워져.')) return; delete r.laundryVerify[id]; }
+    t.done = !t.done;
+    if(t.done){ t.by = tlName(); t.at = Date.now(); } else { delete t.by; delete t.at; }
+    tl.t = Date.now(); render(); tlSave(id);
+  });
   document.querySelectorAll('[data-tl-toggle]').forEach(el=> el.onclick = ()=>{ state.tlOpen = !state.tlOpen; try{ localStorage.setItem('pref:tlOpen', state.tlOpen?'1':'0'); }catch(e){} render(); });
-  document.querySelectorAll('[data-tl2]').forEach(el=> el.onclick = ()=> tlQueue(async ()=>{
-    const id = el.dataset.tl2, tl = state.tmrLaundry; if(!tl) return;
-    try{
-      const x = await window.storage.get('today:'+tl.tds, false); if(!x || !x.value) return;
-      const r = JSON.parse(x.value); const tk = (r.tasks||{})[id] || [];
-      const w = tk.find(q=>q.text==='세탁 완료');
-      r.laundryVerify = r.laundryVerify || {};
-      if(r.laundryVerify[id] && !r.laundryVerify[id].dry) delete r.laundryVerify[id];
-      else {
-        if(!w || !w.done){ miniToast('1차 체크(🧺 세탁 완료)가 먼저 필요해', true); return; }
-        r.laundryVerify[id] = { by: (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나', at: Date.now() };
-      }
-      const raw = JSON.stringify(r);
-      await window.storage.set('today:'+tl.tds, raw, false);
-      state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
-    }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
-  }));
-  document.querySelectorAll('[data-tl3]').forEach(el=> el.onclick = ()=> tlQueue(async ()=>{
-    const id = el.dataset.tl3, tl = state.tmrLaundry; if(!tl) return;
-    try{
-      const x = await window.storage.get('today:'+tl.tds, false); if(!x || !x.value) return;
-      const r = JSON.parse(x.value); const w = ((r.tasks||{})[id]||[]).find(q=>q.text==='세탁 완료');
-      r.laundryVerify = r.laundryVerify || {};
-      if(r.laundryVerify[id] && r.laundryVerify[id].dry) delete r.laundryVerify[id];
-      else {
-        if(!w || !w.done){ miniToast('1차 체크(🧺 세탁 완료)가 먼저 필요해', true); return; }
-        r.laundryVerify[id] = { by: (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나', at: Date.now(), dry: true };
-      }
-      const raw = JSON.stringify(r);
-      await window.storage.set('today:'+tl.tds, raw, false);
-      state.tmrLaundry = { ...tl, rec: r, raw, t: Date.now() }; render();
-    }catch(e){ miniToast('⚠️ 저장 실패 — 다시 눌러줘', true); }
-  }));
+  document.querySelectorAll('[data-tl2]').forEach(el=> el.onclick = ()=>{
+    const id = el.dataset.tl2, tl = state.tmrLaundry; if(!tl || !tl.rec) return;
+    const r = tl.rec; const w = ((r.tasks||{})[id]||[]).find(q=>q.text==='세탁 완료');
+    r.laundryVerify = r.laundryVerify || {};
+    if(r.laundryVerify[id] && !r.laundryVerify[id].dry) delete r.laundryVerify[id];
+    else { if(!w || !w.done){ miniToast('1차 체크(🧺 세탁 완료)가 먼저 필요해', true); return; } r.laundryVerify[id] = { by: tlName(), at: Date.now() }; }
+    tl.t = Date.now(); render(); tlSave(id);
+  });
+  document.querySelectorAll('[data-tl3]').forEach(el=> el.onclick = ()=>{
+    const id = el.dataset.tl3, tl = state.tmrLaundry; if(!tl || !tl.rec) return;
+    const r = tl.rec; const w = ((r.tasks||{})[id]||[]).find(q=>q.text==='세탁 완료');
+    r.laundryVerify = r.laundryVerify || {};
+    if(r.laundryVerify[id] && r.laundryVerify[id].dry) delete r.laundryVerify[id];
+    else { if(!w || !w.done){ miniToast('1차 체크(🧺 세탁 완료)가 먼저 필요해', true); return; } r.laundryVerify[id] = { by: tlName(), at: Date.now(), dry: true }; }
+    tl.t = Date.now(); render(); tlSave(id);
+  });
   document.querySelectorAll('[data-dry-out]').forEach(el=> el.onclick = async ()=>{
     const id = el.dataset.dryOut, r = state.todayRecord; if(!r || !r.laundryVerify || !r.laundryVerify[id]) return;
     const me = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나';
