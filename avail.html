@@ -33,6 +33,20 @@
   .msg{ text-align:center; font-size:14px; margin-top:10px; min-height:20px; }
   .msg.ok{ color:var(--teal); font-weight:700; } .msg.err{ color:var(--clay); font-weight:700; }
   .big{ text-align:center; padding:40px 10px; color:var(--soft); }
+  .tabs{ display:flex; gap:6px; margin:4px 0 10px; }
+  .tab{ flex:1; border:1px solid var(--line); background:#fff; border-radius:10px; padding:9px 4px; font:inherit; font-size:14px; font-weight:700; color:var(--soft); cursor:pointer; line-height:1.25; }
+  .tab small{ display:block; font-weight:500; font-size:11px; }
+  .tab.on{ background:var(--teal); border-color:var(--teal); color:#fff; }
+  .wk{ display:flex; flex-direction:column; gap:6px; }
+  .row{ display:flex; align-items:center; justify-content:space-between; border:1px solid var(--line); background:#fff; border-radius:12px; padding:0 14px; min-height:54px; font:inherit; font-size:16px; font-weight:700; color:var(--ink); cursor:pointer; width:100%; text-align:left; }
+  .row .st{ font-size:14px; font-weight:700; color:var(--soft); }
+  .row.past{ opacity:.35; cursor:default; }
+  .row.today{ border-color:var(--teal); box-shadow:0 0 0 1px var(--teal) inset; }
+  .row.ok{ background:var(--teal); border-color:var(--teal); color:#fff; } .row.ok .st{ color:#fff; }
+  .row.am,.row.pm{ background:var(--amber); border-color:#e5cf85; color:var(--amber-ink); } .row.am .st,.row.pm .st{ color:var(--amber-ink); }
+  .row.all{ background:var(--clay); border-color:var(--clay); color:#fff; } .row.all .st{ color:#fff; }
+  .quick{ display:flex; gap:8px; margin:10px 0 0; }
+  .qbtn{ flex:1; border:1px solid var(--line); background:#fff; border-radius:10px; padding:9px; font:inherit; font-size:14px; color:var(--ink); cursor:pointer; }
   .dirty{ color:var(--clay); font-size:13px; text-align:center; min-height:18px; margin-top:6px; }
 </style>
 </head>
@@ -72,7 +86,13 @@ async function main(){
   if(!snap.exists()){ fail('링크가 올바르지 않아요. 관리자에게 새 링크를 요청해주세요.'); return; }
   const data = snap.data();
   const todayD = new Date(); const today = ymd(todayD);
-  const off = {}; Object.entries(data.off||{}).forEach(([k,v])=>{ if(k>=today && ORDER.includes(v) && v) off[k]=v; });
+  const mode = data.mode === 'off' ? 'off' : 'can'; // can: 가능한 날만 체크 / off: 불가한 날만 체크
+  const ORD = mode === 'can' ? ['', 'ok', 'am', 'pm'] : ['', 'all', 'am', 'pm'];
+  const mapKey = mode === 'can' ? 'can' : 'off';
+  const keep = ymd(new Date(todayD.getFullYear(), todayD.getMonth(), todayD.getDate()-7));
+  const marks = {}; Object.entries(data[mapKey]||{}).forEach(([k,v])=>{ if(k>=today && ORD.includes(v) && v) marks[k]=v; });
+  const done = {}; Object.entries(data.done||{}).forEach(([k,v])=>{ if(k>=keep && v) done[k]=v; });
+  const touched = new Set();
   let note = data.note || '', dirty = false, saving = false, lastSaved = data.confirmedAt || 0;
   const hourly = !!data.hourly; const clock = {};
   const cutoff = ymd(new Date(todayD.getFullYear(), todayD.getMonth(), todayD.getDate()-62));
@@ -86,22 +106,22 @@ async function main(){
     catch(e){ console.error(e); const m2=document.getElementById('cmsg'); if(m2){ m2.className='msg err'; m2.textContent='저장하지 못했어요. 다시 눌러주세요.'; } }
   }
 
-  const start = new Date(todayD.getFullYear(), todayD.getMonth(), todayD.getDate() - todayD.getDay());
-  const months = []; // [{label, cells:[null|{ds,d,wd}]}]
-  for(let i=0;i<WEEKS*7;i++){
-    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate()+i);
-    const key = d.getFullYear()+'-'+pad(d.getMonth()+1);
-    let m = months[months.length-1];
-    if(!m || m.key!==key){ m = { key, label:(d.getMonth()+1)+'월', cells:[] }; months.push(m); for(let k=0;k<d.getDay();k++) m.cells.push(null); }
-    m.cells.push({ ds:ymd(d), d:d.getDate(), wd:d.getDay() });
-  }
-
+  // 주 단위(월~일). 0=이번 주, 1=다음 주, 2=다다음 주
+  const dow0 = (todayD.getDay()+6)%7; // 월=0
+  const mon0 = new Date(todayD.getFullYear(), todayD.getMonth(), todayD.getDate()-dow0);
+  const weeks = [0,1,2].map(i=>{ const m = new Date(mon0.getFullYear(), mon0.getMonth(), mon0.getDate()+7*i);
+    const days = [0,1,2,3,4,5,6].map(k=>{ const d = new Date(m.getFullYear(), m.getMonth(), m.getDate()+k); return { ds:ymd(d), d:d.getDate(), mo:d.getMonth()+1, wd:d.getDay() }; });
+    return { key:days[0].ds, days, label:['이번 주','다음 주','다다음 주'][i], range:(days[0].mo)+'/'+days[0].d+' ~ '+(days[6].mo)+'/'+days[6].d }; });
+  let wi = 1;
   const fmt = t => { const x = new Date(t); return (x.getMonth()+1)+'/'+x.getDate()+' '+pad(x.getHours())+':'+pad(x.getMinutes()); };
+  const LABEL = mode === 'can' ? { ok:'가능', am:'오전만 가능', pm:'오후만 가능' } : { all:'불가', am:'오전만 가능', pm:'오후만 가능' };
+  const EMPTY = mode === 'can' ? '일 못 해요' : '가능';
   function draw(){
-    const cnt = Object.keys(off).length;
+    const wk = weeks[wi]; const cnt = Object.keys(marks).length;
+    const isDone = !!done[wk.key];
     app.innerHTML = `
       <h1>${esc(data.name||'')}님 근무 가능일</h1>
-      <p class="sub">일하기 어려운 날만 눌러서 표시해 주세요.<br>안 누른 날은 <b>모두 가능</b>으로 알고 있을게요.</p>
+      <p class="sub">${mode==='can' ? '<b>일할 수 있는 날</b>을 눌러서 표시해 주세요.<br>안 누른 날은 <b>일할 수 없는 날</b>로 알고 있을게요.' : '일하기 어려운 날만 눌러서 표시해 주세요.<br>안 누른 날은 <b>모두 가능</b>으로 알고 있을게요.'}</p>
       ${hourly ? (()=>{ const c = clock[today]||{}; const hist = Object.keys(clock).filter(k=>k<today).sort().reverse().slice(0,7);
         return `<div class="card">
         <div style="font-size:15px;font-weight:700;margin-bottom:8px;">⏱ 오늘 근무 시간</div>
@@ -114,19 +134,15 @@ async function main(){
         ${hist.length?`<div style="font-size:13px;margin-top:6px;color:var(--soft);">${hist.map(k=>`<div>${+k.slice(5,7)}/${+k.slice(8)} · ${clock[k].in||'?'} ~ ${clock[k].out||'?'} ${dur(clock[k])}</div>`).join('')}</div>`:''}
       </div>`; })() : ''}
       <div class="card">
-        <div style="font-size:14px;"><b>날짜를 누를 때마다</b> 바뀌어요</div>
-        <div class="legend">
-          <span class="lg"><span class="dot"></span>가능</span>
-          <span class="lg"><span class="dot" style="background:var(--clay);border-color:var(--clay)"></span>종일 불가</span>
-          <span class="lg"><span class="dot" style="background:var(--amber);border-color:#e5cf85"></span>오전만 가능 / 오후만 가능</span>
+        <div class="tabs">${weeks.map((w,i)=>`<button class="tab ${i===wi?'on':''}" data-wi="${i}">${w.label}<small>${w.range}${done[w.key]?' ✓':''}</small></button>`).join('')}</div>
+        <div style="font-size:14px;margin-bottom:8px;"><b>누를 때마다</b> 바뀌어요 · ${wk.range}${isDone?' · <span style="color:var(--teal);font-weight:700;">입력 완료 ✓</span>':''}</div>
+        <div class="wk">
+          ${wk.days.map(c=>{ const past = c.ds < today, v = marks[c.ds]||'';
+            return `<button class="row ${past?'past':''} ${c.ds===today?'today':''} ${v}" data-ds="${c.ds}" ${past?'disabled':''}><span>${c.mo}/${c.d} (${DOW[c.wd]})${c.ds===today?' · 오늘':''}</span><span class="st">${LABEL[v]||(past?'':EMPTY)}</span></button>`; }).join('')}
         </div>
-        ${months.map(m=>`<div class="mhead">${m.label}</div><div class="grid">
-          ${DOW.map((n,i)=>`<div class="dow ${i===0?'s':i===6?'t':''}">${n}</div>`).join('')}
-          ${m.cells.map(c=>{
-            if(!c) return '<div class="day empty"></div>';
-            const past = c.ds < today, v = off[c.ds]||'';
-            return `<button class="day ${past?'past':''} ${c.ds===today?'today':''} ${v}" data-ds="${c.ds}" ${past?'disabled':''}>${c.d}<small>${LABEL[v]||''}</small></button>`;
-          }).join('')}</div>`).join('')}
+        <div class="quick">${mode==='can'
+          ? '<button class="qbtn" id="allok">이 주 전부 가능</button><button class="qbtn" id="allno">이 주 전부 불가</button>'
+          : '<button class="qbtn" id="allno">이 주 표시 모두 지우기</button>'}</div>
       </div>
       <div class="card">
         <div style="font-size:14px;font-weight:700;margin-bottom:6px;">전달할 말 (선택)</div>
@@ -135,23 +151,24 @@ async function main(){
       <div class="dirty" id="dirty">${dirty?'아직 저장 전이에요. 아래 "입력 완료"를 눌러주세요':''}</div>
       <button class="btn" id="save" ${saving?'disabled':''}>입력 완료</button>
       <div class="msg ${lastSaved?'ok':''}" id="msg">${lastSaved?'마지막 입력 '+fmt(lastSaved)+' ✓':''}</div>
-      <div class="sub" style="text-align:center;margin-top:14px;">불가 표시한 날 ${cnt}일</div>`;
-    app.querySelectorAll('.day[data-ds]').forEach(b=> b.onclick = ()=>{
-      const ds = b.dataset.ds; const next = ORDER[(ORDER.indexOf(off[ds]||'')+1)%ORDER.length];
-      if(next) off[ds] = next; else delete off[ds];
-      dirty = true; const sc = window.scrollY; draw(); window.scrollTo(0, sc);
+      <div class="sub" style="text-align:center;margin-top:14px;">${mode==='can'?'가능으로 표시한 날':'불가로 표시한 날'} ${cnt}일</div>`;
+    app.querySelectorAll('.tab[data-wi]').forEach(b=> b.onclick = ()=>{ wi = Number(b.dataset.wi); draw(); window.scrollTo(0,0); });
+    app.querySelectorAll('.row[data-ds]').forEach(b=> b.onclick = ()=>{
+      const ds = b.dataset.ds; const next = ORD[(ORD.indexOf(marks[ds]||'')+1)%ORD.length];
+      if(next) marks[ds] = next; else delete marks[ds];
+      touched.add(wk.key); dirty = true; const sc = window.scrollY; draw(); window.scrollTo(0, sc);
     });
-    const ci = document.getElementById('cin'), co = document.getElementById('cout'), cs = document.getElementById('csave');
-    if(ci) ci.onclick = ()=>{ const c = clock[today] = clock[today] || {}; if(c.in && !confirm('이미 시작 시간이 있어요. '+nowHM()+'로 바꿀까요?')) return; c.in = nowHM(); saveClock('시작 '+c.in+' 저장됐어요 ✓'); };
-    if(co) co.onclick = ()=>{ const c = clock[today] = clock[today] || {}; if(!c.in && !confirm('시작을 안 누르셨어요. 끝 시간만 저장할까요?')) return; if(c.out && !confirm('이미 끝 시간이 있어요. '+nowHM()+'로 바꿀까요?')) return; c.out = nowHM(); saveClock('끝 '+c.out+' 저장됐어요 ✓'); };
-    if(cs) cs.onclick = ()=>{ const a = document.getElementById('cin_t').value, b = document.getElementById('cout_t').value; const c = clock[today] = clock[today] || {}; if(a) c.in = a; else delete c.in; if(b) c.out = b; else delete c.out; if(!c.in && !c.out) delete clock[today]; saveClock('고쳤어요 ✓'); };
+    const aok = document.getElementById('allok'), ano = document.getElementById('allno');
+    if(aok) aok.onclick = ()=>{ wk.days.forEach(c=>{ if(c.ds>=today) marks[c.ds]='ok'; }); touched.add(wk.key); dirty = true; draw(); };
+    if(ano) ano.onclick = ()=>{ wk.days.forEach(c=>{ delete marks[c.ds]; }); touched.add(wk.key); dirty = true; draw(); };
     const ta = document.getElementById('note'); ta.oninput = ()=>{ note = ta.value; if(!dirty){ dirty = true; document.getElementById('dirty').textContent = '아직 저장 전이에요. 아래 "입력 완료"를 눌러주세요'; } };
     document.getElementById('save').onclick = async ()=>{
       if(saving) return; saving = true; const btn = document.getElementById('save'), msg = document.getElementById('msg');
       btn.disabled = true; msg.className = 'msg'; msg.textContent = '저장 중…';
       try{
         const now = Date.now();
-        await fsM.updateDoc(ref, { off: { ...off }, note: note.trim(), confirmedAt: now, updatedAt: now });
+        touched.add(wk.key); touched.forEach(k=>{ done[k] = now; });
+        await fsM.updateDoc(ref, { [mapKey]: { ...marks }, done: { ...done }, note: note.trim(), confirmedAt: now, updatedAt: now });
         dirty = false; lastSaved = now; saving = false; draw();
         document.getElementById('msg').textContent = '저장됐어요 ✓ ' + fmt(now);
       }catch(e){
