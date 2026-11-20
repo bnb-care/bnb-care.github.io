@@ -452,6 +452,25 @@
     border-radius:16px 16px 0 0;padding:18px 16px 22px 16px;
     max-height:86vh;overflow-y:auto;
   }
+  .sf-sec{border-top:1px solid var(--paper-line);padding:12px 0 4px;}
+  .sf-sec:first-of-type{border-top:none;padding-top:0;}
+  .sf-ttl{font-size:13px;font-weight:800;color:var(--ink);margin-bottom:8px;}
+  .sf-check{display:flex;align-items:flex-start;gap:8px;font-size:14px;margin:8px 0 0;cursor:pointer;color:var(--ink);}
+  .sf-check input{width:20px;height:20px;margin:1px 0 0;padding:0;flex:none;accent-color:var(--teal);}
+  .sf-check small{display:block;font-size:12px;color:var(--ink-soft);margin-top:1px;}
+  .sf-hint{font-size:12px;color:var(--ink-soft);margin-top:6px;line-height:1.45;}
+  .sf-days{display:flex;gap:5px;}
+  .sf-day{flex:1;margin:0 !important;}
+  .sf-day input{display:none;}
+  .sf-day span{display:block;text-align:center;padding:9px 0;border:1px solid var(--paper-line);border-radius:8px;background:var(--surface);color:var(--ink-soft);font-size:14px;font-weight:700;cursor:pointer;}
+  .sf-day input:checked + span{background:var(--teal);border-color:var(--teal);color:#fff;}
+  .sf-day.sun span{color:var(--clay);} .sf-day.sat span{color:#3b6ea5;}
+  .sf-day.sun input:checked + span,.sf-day.sat input:checked + span{color:#fff;}
+  .sf-seg{display:flex;gap:6px;}
+  .sf-seg button{flex:1;border:1px solid var(--paper-line);background:var(--surface);border-radius:10px;padding:9px 6px;font-size:14px;font-weight:700;color:var(--ink-soft);cursor:pointer;font-family:var(--sans);line-height:1.3;}
+  .sf-seg button small{display:block;font-size:11px;font-weight:500;}
+  .sf-seg button.on{background:var(--teal);border-color:var(--teal);color:#fff;}
+  .sf-date{flex:1;min-width:0;padding:9px 6px;border:1px solid var(--paper-line);border-radius:8px;font-size:13px;font-family:var(--sans);background:var(--paper);color:var(--ink);}
   .sheet h2{font-family:var(--sans);font-size:17px;margin:0 0 14px 0;}
   .field{margin-bottom:10px;}
   .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:4px;font-weight:600;}
@@ -496,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-71';
+const APP_BUILD = '1102-80';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1034,29 +1053,62 @@ function openStaffEditSheet(st){
   root.innerHTML = `
     <div class="sheet">
       <h2>${st?'직원 수정':'직원 추가'}</h2>
-      <div class="field"><label>이름</label><input id="sf_name" value="${esc(cur.name)}"></div>
-      <div class="field"><label>연락처</label><input id="sf_phone" value="${esc(cur.phone||'')}"></div>
-      <div class="field"><label>근무 가능 요일</label>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          ${DAY_NAMES.map((n,i)=>`<label style="display:flex;align-items:center;gap:4px;font-size:14px;margin:0;color:var(--ink);"><input type="checkbox" class="sf_day" style="width:auto;padding:0;margin:0;flex:none;" value="${i}" ${(cur.days||[]).includes(i)?'checked':''}>${n}</label>`).join('')}
-        </div></div>
-      <div class="field"><label>근무 종료 제한 (예: 15:30, 없으면 비움)</label><input id="sf_end" value="${esc(cur.endTime||'')}"></div>
-      <div class="field"><label>배정 금지 숙소 키워드 (쉼표로 구분)</label><input id="sf_forbid" value="${esc((cur.forbidden||[]).join(','))}"></div>
-      <div class="field"><label>휴무일 (날짜를 골라 추가)</label>
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-          <input type="date" id="sf_off1" style="flex:1;min-width:120px;"><span>~</span><input type="date" id="sf_off2" style="flex:1;min-width:120px;" title="하루만이면 비워둬">
-          <button class="pill-btn" id="sf_offadd" type="button">추가</button>
+      <div class="sf-sec">
+        <div class="sf-ttl">기본 정보</div>
+        <div class="field-grid">
+          <div class="field"><label>이름</label><input id="sf_name" value="${esc(cur.name)}"></div>
+          <div class="field"><label>연락처</label><input id="sf_phone" inputmode="tel" value="${esc(cur.phone||'')}"></div>
         </div>
-        <div id="sf_offlist" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div></div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:6px 0;"><input type="checkbox" id="sf_req" ${cur.onRequest?'checked':''}>요일 미정: 연락 온 날만 배정 (평소엔 불가로 처리)</label>
-      <div class="field" style="margin-top:6px;"><label>가능일 입력 방식</label><select id="sf_amode"><option value="can" ${(cur.availMode||'can')==='can'?'selected':''}>체크제 — 일할 수 있는 날만 표시 (안 누르면 불가)</option><option value="off" ${cur.availMode==='off'?'selected':''}>불가 표시제 — 못 하는 날만 표시 (안 누르면 가능)</option></select></div>
-      <div class="field" style="margin-top:6px;"><label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:0 0 4px;"><input type="checkbox" id="sf_hourly" ${cur.hourly?'checked':''}>시급제 (가능일 링크에서 청소 시작/끝을 기록)</label><input id="sf_rate" inputmode="numeric" placeholder="시급 (원)" value="${esc(String(cur.hourlyRate||''))}"></div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:14px;margin:6px 0;"><input type="checkbox" id="sf_mgr" ${cur.role==='manager'?'checked':''}>관리직 (직원 탭에서 따로 묶어서 보여줘 · 일정 없음 알림 제외)</label>
+        <div class="field"><label>주소</label><input id="sf_addr" placeholder="예: 마포구 연남동 ○○" value="${esc(cur.address||'')}"></div>
+      </div>
+      <div class="sf-sec">
+        ${!st ? '<div class="sf-hint">저장한 다음 다시 열면 여기서 링크를 보낼 수 있어.</div>'
+          : `<div style="display:flex;gap:6px;"><button type="button" class="pill-btn" id="sf_linksend" style="flex:1;justify-content:center;">🔗 ${st.availToken?'링크 보내기':'링크 만들어 보내기'}</button>${st.availToken?'<button type="button" class="pill-btn" id="sf_linkopen" style="flex:1;justify-content:center;">👀 직원 화면 열어 보기</button>':''}</div>
+          <div class="sf-hint">${st.availToken?'링크는 한 번만 보내면 계속 써. 이 화면에서 바꾼 내용은 먼저 저장하고 보내져.':'처음 누르면 이 직원 전용 링크가 만들어져.'}</div>`}
+        <div style="height:10px;"></div>
+        <div class="sf-seg" id="sf_amode_seg">
+          <button type="button" data-amode="can" class="${(cur.availMode||'can')==='can'?'on':''}">되는 날 누르기<small>안 누르면 불가</small></button>
+          <button type="button" data-amode="off" class="${cur.availMode==='off'?'on':''}">안 되는 날 누르기<small>안 누르면 가능</small></button>
+        </div>
+        <input type="hidden" id="sf_amode" value="${cur.availMode==='off'?'off':'can'}">
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;min-height:44px;">
+          <label class="sf-check" style="margin:0;flex-shrink:0;align-items:center;" title="링크 화면에 청소 시작/끝 버튼이 생겨"><input type="checkbox" id="sf_hourly" ${cur.hourly?'checked':''}><span>시급제</span></label>
+          <input id="sf_rate" inputmode="numeric" placeholder="시급 (원)" value="${esc(String(cur.hourlyRate||''))}" style="flex:1;min-width:0;padding:10px 11px;border:1px solid var(--paper-line);border-radius:8px;font-size:14px;font-family:var(--sans);background:var(--paper);color:var(--ink);${cur.hourly?'':'visibility:hidden;'}">
+        </div>
+      </div>
+      <div class="sf-sec">
+        <div class="sf-ttl">기본 근무 조건</div>
+        <div id="sf_days_wrap">
+        <div class="field"><label>근무 가능 요일</label>
+          <div class="sf-days">${DAY_NAMES.map((n,i)=>`<label class="sf-day ${i===0?'sun':i===6?'sat':''}"><input type="checkbox" class="sf_day" value="${i}" ${(cur.days||[]).includes(i)?'checked':''}><span>${n}</span></label>`).join('')}</div>
+        </div>
+        <label class="sf-check"><input type="checkbox" id="sf_req" ${cur.onRequest?'checked':''}><span>요일 미정<small>연락 온 날만 배정 (평소엔 불가로 처리)</small></span></label>
+        <div class="sf-hint">${st&&st.availToken?'"안 되는 날 누르기" 직원은 링크에서 안 누른 날 중 이 요일만 가능으로 봐.':'링크를 보내기 전까지는 이 요일로 배정을 판단해.'}</div>
+        </div>
+        <div id="sf_days_off" class="sf-hint" style="display:none;margin-bottom:4px;">요일은 링크에서 직원이 직접 입력해서 따로 안 정해도 돼.</div>
+        <div class="field" style="margin-top:10px;"><label>근무 종료 제한</label><input id="sf_end" placeholder="예: 15:30 (없으면 비워 둬)" value="${esc(cur.endTime||'')}"></div>
+        <input type="hidden" id="sf_forbid" value="${esc((cur.forbidden||[]).join(','))}">
+      </div>
+      <div class="sf-sec">
+        <div class="sf-ttl">휴무일</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="date" id="sf_off1" class="sf-date"><span>~</span><input type="date" id="sf_off2" class="sf-date" title="하루만이면 비워둬">
+          <button class="pill-btn" id="sf_offadd" type="button" style="flex-shrink:0;">추가</button>
+        </div>
+        <div class="sf-hint">하루만이면 뒤 칸은 비워 둬.</div>
+        <div id="sf_offlist" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
+      </div>
       <div class="sheet-actions">
         <button class="cancel-btn" id="sf_cancel">취소</button>
         <button class="save-btn" id="sf_save">저장</button>
       </div>
-      ${st&&!st.inactive?`<button id="sf_pause" style="background:none;border:none;color:var(--ink-soft);font-size:12px;margin-top:10px;margin-right:14px;cursor:pointer;">퇴사/중단 (보관)</button>`:''}${st?`<button id="sf_del" style="background:none;border:none;color:var(--clay);font-size:12px;margin-top:10px;cursor:pointer;">직원 삭제</button>`:''}
+      <div style="display:flex;align-items:center;margin-top:10px;">
+        ${st&&!st.inactive?`<button id="sf_pause" style="background:none;border:none;color:var(--ink-soft);font-size:12px;margin-right:14px;cursor:pointer;">퇴사/중단 (보관)</button>`:''}${st?`<button id="sf_del" style="background:none;border:none;color:var(--clay);font-size:12px;cursor:pointer;">직원 삭제</button>`:''}
+        <button type="button" id="sf_more" title="추가 설정" aria-label="추가 설정" style="margin-left:auto;border:none;background:transparent;font-size:18px;line-height:1;padding:6px 4px;cursor:pointer;opacity:${cur.role==='manager'?1:.55};">⚙️</button>
+      </div>
+      <div id="sf_more_box" style="display:${cur.role==='manager'?'block':'none'};margin-top:6px;padding:10px 12px;border:1px dashed var(--paper-line);border-radius:10px;">
+        <label class="sf-check" style="margin:0;"><input type="checkbox" id="sf_mgr" ${cur.role==='manager'?'checked':''}><span>관리직<small>직원 탭에서 따로 묶고, 가능일 표·일정 없음 알림에서 빠져</small></span></label>
+      </div>
     </div>`;
   document.body.appendChild(root);
   const fmtOff = ds=>{ const [y,m,d]=ds.split('-').map(Number); return m+'/'+d+'('+'일월화수목금토'[new Date(y,m-1,d).getDay()]+')'; };
@@ -1074,6 +1126,13 @@ function openStaffEditSheet(st){
     const pb = document.getElementById('sf_pastbtn'); if(pb) pb.onclick = ()=>{ window._showPastOff = !window._showPastOff; drawOffs(); };
     document.getElementById('sf_offlist').querySelectorAll('[data-off-del]').forEach(b=> b.onclick = ()=>{ const [x1,x2] = b.dataset.offDel.split('|'); offs = offs.filter(x=> x<x1 || x>x2); drawOffs(); });
   };
+  { const ls = document.getElementById('sf_linksend'); if(ls) ls.onclick = async ()=>{ await document.getElementById('sf_save').onclick(); if(staffById(cur.id)) await sendAvailLink(cur.id); };
+    const lo = document.getElementById('sf_linkopen'); if(lo) lo.onclick = ()=>{ const s0 = staffById(cur.id); if(s0 && s0.availToken) window.open(availLink(s0), '_blank'); }; }
+  document.getElementById('sf_more').onclick = ()=>{ const bx = document.getElementById('sf_more_box'), on = bx.style.display==='none'; bx.style.display = on?'block':'none'; document.getElementById('sf_more').style.opacity = on?1:.55; };
+  const syncDays = ()=>{ const hide = !!(st && st.availToken) && document.getElementById('sf_amode').value==='can'; document.getElementById('sf_days_wrap').style.display = hide?'none':''; document.getElementById('sf_days_off').style.display = hide?'':'none'; };
+  root.querySelectorAll('[data-amode]').forEach(b=> b.onclick = ()=>{ document.getElementById('sf_amode').value = b.dataset.amode; root.querySelectorAll('[data-amode]').forEach(x=>x.classList.toggle('on', x===b)); syncDays(); });
+  syncDays();
+  document.getElementById('sf_hourly').onchange = (e)=>{ document.getElementById('sf_rate').style.visibility = e.target.checked ? '' : 'hidden'; };
   drawOffs();
   document.getElementById('sf_offadd').onclick = ()=>{
     const a = document.getElementById('sf_off1').value, b2 = document.getElementById('sf_off2').value || a;
@@ -1093,7 +1152,7 @@ function openStaffEditSheet(st){
     if(!name){ alert('이름을 입력해줘.'); return; }
     if(document.getElementById('sf_off1').value) document.getElementById('sf_offadd').onclick(); // 날짜만 고르고 추가를 안 눌러도 같이 저장
     const days = Array.from(root.querySelectorAll('.sf_day')).filter(c=>c.checked).map(c=>Number(c.value));
-    const obj = { id:cur.id, inactive:!!cur.inactive, role:(document.getElementById('sf_mgr').checked?'manager':''), name, phone:document.getElementById('sf_phone').value.trim(), days,
+    const obj = { id:cur.id, inactive:!!cur.inactive, role:(document.getElementById('sf_mgr').checked?'manager':''), name, phone:document.getElementById('sf_phone').value.trim(), address:document.getElementById('sf_addr').value.trim(), days,
       endTime:document.getElementById('sf_end').value.trim(),
       forbidden:document.getElementById('sf_forbid').value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),
       onRequest:document.getElementById('sf_req').checked, offDates: offs, availToken: cur.availToken||'', hourly: document.getElementById('sf_hourly').checked, hourlyRate: Number(String(document.getElementById('sf_rate').value).replace(/[^0-9]/g,''))||0, availMode: document.getElementById('sf_amode').value };
