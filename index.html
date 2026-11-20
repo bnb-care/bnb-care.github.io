@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-88';
+const APP_BUILD = '1102-89';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -967,15 +967,15 @@ function selectedWeekday(){
   const [y,m,d] = state.selectedDate.split('-').map(Number);
   return new Date(y,m-1,d).getDay();
 }
-function offLabel(st){ if((st.offDates||[]).includes(state.selectedDate)) return '휴무'; if(availCanMode(st)) return availWeekDone(st, state.selectedDate) ? '가능일 아님' : '가능일 미입력'; return staffOffToday(st) ? '휴무' : (st.onRequest ? '연락 시' : '불가'); }
+function offLabel(st){ if((st.offDates||[]).includes(state.selectedDate)) return '휴무'; if(availStrict(st, state.selectedDate)) return '가능일 아님'; return staffOffToday(st) ? '휴무' : (st.onRequest ? '연락 시' : '불가'); }
 function offNamesOn(ds){ return activeStaff().filter(st=>st.role==='manager' && (st.offDates||[]).includes(ds)).map(st=>{ const n=st.name||''; return /^[가-힣]{3}$/.test(n) ? n.slice(1) : n; }); }
 function offFullNames(ds){ return activeStaff().filter(st=>st.role==='manager' && (st.offDates||[]).includes(ds)).map(st=>st.name); }
 function offLineHtml(ds){ const a = offFullNames(ds); return a.length ? `<div class="off-line" style="margin:6px 0;padding:6px 10px;border-radius:8px;background:#FBF1D6;color:#8a6d1f;font-size:13px;font-weight:600;">🌴 휴무: ${esc(a.join(', '))}</div>` : ''; }
 function offNamesHtml(ds){ const a = offNamesOn(ds); return a.length ? `<span class="off" title="휴무: ${esc(a.join(', '))}">휴 ${esc(a.join('·'))}</span>` : ''; }
-function staffOffToday(st){ const ds = state.selectedDate; return (st.offDates||[]).includes(ds) || availOffOn(st, ds)==='all' || (availCanMode(st) && !availCanOn(st, ds)); }
+function staffOffToday(st){ const ds = state.selectedDate; return (st.offDates||[]).includes(ds) || availOffOn(st, ds)==='all' || (availStrict(st, ds) && !availCanOn(st, ds)); }
 function staffUnavailable(st){
   if(staffOffToday(st)) return true; // 휴무일
-  if(availCanMode(st)) return false; // 직원이 가능일로 표시한 날
+  if(availStrict(st, state.selectedDate)) return false; // 직원이 그 주 가능일을 입력했으면 그 입력대로 (위 staffOffToday에서 판단)
   if(st.onRequest) return true; // 요일 미정: 연락 온 날만 배정
   const wd = selectedWeekday();
   const days = (st.days && st.days.length) ? st.days : [0,1,2,3,4,5,6];
@@ -984,10 +984,13 @@ function staffUnavailable(st){
 function warningsFor(st, p){
   const w = [];
   if(!st || !p) return w;
-  if(availCanMode(st)){ const v = availCanOn(st, state.selectedDate); if(!v) w.push(availWeekDone(st, state.selectedDate) ? '직원이 이 날 가능으로 표시하지 않았어' : '이 주 가능일을 아직 입력하지 않았어'); else if(v==='am') w.push('직원 입력: 오전만 가능'); else if(v==='pm') w.push('직원 입력: 오후만 가능'); }
-  else if(st.onRequest) w.push('연락 온 날만 배정 (요일 미정)');
-  else if(availOffOn(st, state.selectedDate)==='all') w.push('직원이 이 날 불가로 입력했어');
-  else if(staffUnavailable(st)) w.push(`${DAY_NAMES[selectedWeekday()]}요일은 근무 불가`);
+  if(availStrict(st, state.selectedDate)){ const v = availCanOn(st, state.selectedDate); if(!v) w.push('직원이 이 날 가능으로 표시하지 않았어'); else if(v==='am') w.push('직원 입력: 오전만 가능'); else if(v==='pm') w.push('직원 입력: 오후만 가능'); }
+  else {
+    if(availCanMode(st)) w.push('이 주 가능일 미입력 (요일 설정으로 판단 중)');
+    if(st.onRequest) w.push('연락 온 날만 배정 (요일 미정)');
+    else if(availOffOn(st, state.selectedDate)==='all') w.push('직원이 이 날 불가로 입력했어');
+    else if(staffUnavailable(st)) w.push(`${DAY_NAMES[selectedWeekday()]}요일은 근무 불가`);
+  }
   { const av = availOffOn(st, state.selectedDate); if(av==='am') w.push('직원 입력: 오전만 가능'); if(av==='pm') w.push('직원 입력: 오후만 가능'); }
   (st.forbidden||[]).forEach(k=>{
     if(k && (p.name||'').includes(k)) w.push(`${st.name}님은 ${k} 배정 금지`);
@@ -1084,9 +1087,8 @@ function openStaffEditSheet(st){
           <div class="sf-days">${DAY_NAMES.map((n,i)=>`<label class="sf-day ${i===0?'sun':i===6?'sat':''}"><input type="checkbox" class="sf_day" value="${i}" ${(cur.days||[]).includes(i)?'checked':''}><span>${n}</span></label>`).join('')}</div>
         </div>
         <label class="sf-check"><input type="checkbox" id="sf_req" ${cur.onRequest?'checked':''}><span>요일 미정<small>연락 온 날만 배정 (평소엔 불가로 처리)</small></span></label>
-        <div class="sf-hint">${st&&st.availToken?'"안 되는 날 누르기" 직원은 링크에서 안 누른 날 중 이 요일만 가능으로 봐.':'링크를 보내기 전까지는 이 요일로 배정을 판단해.'}</div>
+        <div class="sf-hint" id="sf_days_hint"></div>
         </div>
-        <div id="sf_days_off" class="sf-hint" style="display:none;margin-bottom:4px;">요일은 링크에서 직원이 직접 입력해서 따로 안 정해도 돼.</div>
         <div class="field" style="margin-top:10px;"><label>근무 종료 제한</label><input id="sf_end" placeholder="예: 15:30 (없으면 비워 둬)" value="${esc(cur.endTime||'')}"></div>
         <input type="hidden" id="sf_forbid" value="${esc((cur.forbidden||[]).join(','))}">
       </div>
@@ -1136,7 +1138,7 @@ function openStaffEditSheet(st){
     box.querySelectorAll('[data-sfh-toggle]').forEach(b=> b.onclick = ()=>{ state.sfHourlyOpen = !state.sfHourlyOpen; drawHours(); });
     box.querySelectorAll('[data-sfh-edit]').forEach(r=> r.onclick = async ()=>{ await editHourlyDay(cur.id, r.dataset.sfhEdit); drawHours(); }); };
   drawHours();
-  const syncDays = ()=>{ const hide = !!(st && st.availToken) && document.getElementById('sf_amode').value==='can'; document.getElementById('sf_days_wrap').style.display = hide?'none':''; document.getElementById('sf_days_off').style.display = hide?'':'none'; };
+  const syncDays = ()=>{ const can = document.getElementById('sf_amode').value==='can'; const h = document.getElementById('sf_days_hint'); if(h) h.textContent = !(st && st.availToken) ? '링크를 보내기 전까지는 이 요일로 배정을 판단해.' : (can ? '직원이 가능일을 아직 입력 안 한 주는 이 요일로 판단해. 입력한 주는 입력대로.' : '"안 되는 날 누르기" 직원은 링크에서 안 누른 날 중 이 요일만 가능으로 봐.'); };
   root.querySelectorAll('[data-amode]').forEach(b=> b.onclick = ()=>{ document.getElementById('sf_amode').value = b.dataset.amode; root.querySelectorAll('[data-amode]').forEach(x=>x.classList.toggle('on', x===b)); syncDays(); });
   syncDays();
   document.getElementById('sf_hourly').onchange = (e)=>{ document.getElementById('sf_rate').style.visibility = e.target.checked ? '' : 'hidden'; drawHours(); };
@@ -2022,6 +2024,8 @@ function newAvailToken(){ const a = new Uint8Array(18); crypto.getRandomValues(a
 function availLink(st){ return AVAIL_PAGE+'?t='+encodeURIComponent(st.availToken); }
 function availOf(st){ return (state.avail||{})[st.id] || null; }
 function availCanMode(st){ return !!(st.availToken && (st.availMode||'can')==='can' && availOf(st)); }
+// 그 주 가능일을 입력한 '되는 날 누르기' 직원만 입력대로 판단. 아직 입력 안 한 주는 예전처럼 요일 설정으로 판단
+function availStrict(st, ds){ return availCanMode(st) && availWeekDone(st, ds); }
 function availCanOn(st, ds){ const a = availOf(st); return (a && a.can && a.can[ds]) || ''; }
 function availWeekKey(ds){ const d = new Date(Number(ds.slice(0,4)), Number(ds.slice(5,7))-1, Number(ds.slice(8))); const k = (d.getDay()+6)%7; const m = new Date(d.getFullYear(), d.getMonth(), d.getDate()-k); return ymd(m.getFullYear(), m.getMonth(), m.getDate()); }
 function availWeekDone(st, ds){ const a = availOf(st); return !!(a && a.done && a.done[availWeekKey(ds)]); }
@@ -2060,7 +2064,8 @@ function availCell(st, ds, wd){
     if((st.offDates||[]).includes(ds)) return '<span style="color:var(--ink-soft);font-size:11px;">휴</span>';
     if(c === 'ok') return '<span style="color:var(--teal);font-weight:700;">●</span>';
     if(c === 'am' || c === 'pm') return '<span style="color:#7a5a00;background:#FBF1D6;border-radius:6px;padding:1px 3px;font-size:10px;font-weight:700;white-space:nowrap;">'+(c==='am'?'오전':'오후')+'</span>';
-    return availWeekDone(st, ds) ? '<span style="color:var(--ink-soft);opacity:.5;">–</span>' : '<span style="color:#b08a1a;font-size:11px;">?</span>'; }
+    if(availWeekDone(st, ds)) return '<span style="color:var(--ink-soft);opacity:.5;">–</span>';
+    { const dd = (st.days && st.days.length) ? st.days : [0,1,2,3,4,5,6]; return (st.onRequest || !dd.includes(wd)) ? '<span style="color:#b08a1a;font-size:11px;">?</span>' : '<span style="color:#b08a1a;font-size:11px;">○?</span>'; } }
   const v = availOffOn(st, ds);
   if(v === 'all') return '<span style="color:#fff;background:var(--clay);border-radius:6px;padding:1px 5px;font-size:12px;font-weight:700;">✕</span>';
   if(v === 'am') return '<span style="color:#7a5a00;background:#FBF1D6;border-radius:6px;padding:1px 4px;font-size:10px;font-weight:700;white-space:nowrap;">오전</span>';
@@ -2071,7 +2076,7 @@ function availCell(st, ds, wd){
   return '<span style="color:var(--teal);opacity:.55;">○</span>';
 }
 function availCan(st, ds, wd){
-  if(availCanMode(st)) return !!availCanOn(st, ds) && !(st.offDates||[]).includes(ds);
+  if(availStrict(st, ds)) return !!availCanOn(st, ds) && !(st.offDates||[]).includes(ds);
   if(availOffOn(st, ds) === 'all' || (st.offDates||[]).includes(ds)) return false;
   const days = (st.days && st.days.length) ? st.days : [0,1,2,3,4,5,6];
   return !st.onRequest && days.includes(wd);
@@ -2104,7 +2109,7 @@ function renderAvailPanel(){
   const cnt = `<tr style="border-top:2px solid var(--paper-line);"><td style="position:sticky;left:0;background:#fff;font-size:12px;font-weight:700;padding:5px 6px 5px 0;">가능 인원</td>${days.map(x=>{ const n = staff.filter(st=>availCan(st, x.ds, x.wd)).length; return `<td style="text-align:center;font-size:12px;font-weight:700;${n<=1?'color:var(--clay);':''}">${n}</td>`; }).join('')}</tr>`;
   const notes = staff.filter(st=>{ const a=availOf(st); return a && a.note && a.note.trim(); }).map(st=>`<div style="font-size:12px;margin-top:4px;"><b>${esc(st.name)}</b> · ${esc(availOf(st).note)}</div>`).join('');
   return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">${head}
-    <div style="font-size:11px;color:var(--ink-soft);margin:4px 0 6px;">● 가능 · 오전/오후는 그 시간만 · ○ 기본 가능 · ✕ 불가 · – 가능일 아님 · ? 이 주 미입력</div>
+    <div style="font-size:11px;color:var(--ink-soft);margin:4px 0 6px;">● 가능 · 오전/오후는 그 시간만 · ○ 기본 가능 · ✕ 불가 · – 가능일 아님 · ○? 미입력(요일상 가능) · ? 미입력</div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="border-collapse:collapse;width:100%;"><thead><tr><th></th>${th}</tr></thead><tbody>${rows}${cnt}</tbody></table></div>
     ${notes}</div></div>`;
 }
@@ -2213,7 +2218,7 @@ function renderStaffTab(){
     const dtxt = days.length===7 ? '상시 가능' : days.map(d=>DAY_NAMES[d]).join('');
     const linkMode = !!(st.availToken && (st.availMode||'can')==='can');
     const nextDone = (()=>{ if(!st.availToken) return null; const a = availOf(st); if(!a) return null; const x = new Date(); x.setDate(x.getDate()+7); return !!((a.done||{})[availWeekKey(ymd(x.getFullYear(), x.getMonth(), x.getDate()))]); })();
-    const sumTxt = (linkMode ? '가능일 링크'+(nextDone===null?'':(nextDone?' · 다음 주 ✓':' · <b style="color:var(--clay);font-weight:600;">다음 주 미입력</b>')) : dtxt)
+    const sumTxt = (linkMode ? '가능일 링크'+(nextDone===null?'':(nextDone?' · 다음 주 ✓':' · <b style="color:#b08a1a;font-weight:600;">다음 주 미입력</b>')) : dtxt)
       + (()=>{ const t=todayStr(); const u=(st.offDates||[]).filter(d=>d>=t).slice(0,3).map(d=>+d.slice(5,7)+'/'+ +d.slice(8)); return u.length?' · 휴무 '+u.join(','):''; })()
       + (st.endTime?' · ~'+esc(st.endTime):'') + (st.hourly?' · 시급제':'') + (!linkMode && st.onRequest?' · 연락대기':'');
     return `<div class="prop-card open" style="margin-bottom:8px;">
