@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-87';
+const APP_BUILD = '1102-88';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1967,11 +1967,20 @@ function asDetail(items, indent){
   const rows = items.map(([n,c,x])=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 8px;background:var(--paper);border-radius:6px;font-size:12.5px;"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n}</span><b>${c}${x?' · '+x:''}</b></div>`).join('');
   return `<div style="margin:8px 0 4px ${indent>80?0:0}px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;">${rows}</div>`;
 }
+// 접는 칸 공통 머리줄 (내 근태 · 직원 가능일 · 배정 현황)
+function panelHead(title, summary, open, attr, extra){
+  return `<div ${attr} style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+    <div style="font-weight:700;font-size:15px;flex-shrink:0;">${title}</div>
+    <div style="flex:1;min-width:0;font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${open?'':(summary||'')}</div>
+    ${extra||''}<button class="pill-btn" style="flex-shrink:0;">${open?'접기 ▴':'펼치기 ▾'}</button>
+  </div>`;
+}
 function renderAssignStats(){
   if(!isAdmin()) return '';
-  const head = `<button class="pill-btn" id="asToggle" style="width:100%;margin-bottom:10px;">📊 직원별 배정 현황 ${state.asOpen?'▴':'▾'}</button>`;
-  if(!state.asOpen) return head;
-  if(!state.asData) return head + '<div class="empty" style="padding:10px;">불러오는 중…</div>';
+  const head = panelHead('📊 직원별 배정 현황', '', state.asOpen, 'data-as-toggle="1"');
+  const wrap = inner=> `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">${head}${inner}</div></div>`;
+  if(!state.asOpen) return wrap('');
+  if(!state.asData) return wrap('<div class="empty" style="padding:10px;">불러오는 중…</div>');
   const st = computeAssignStats();
   const rows = Object.keys(st.out).map(sid=>{ const s0 = staffById(sid); return { sid, name: s0 ? s0.name : '(삭제된 직원)', o: st.out[sid], mgr: s0 && s0.role==='manager' }; }).sort((x,y)=>y.o.n-x.o.n);
   const max = rows.length ? rows[0].o.n : 1;
@@ -1999,12 +2008,12 @@ function renderAssignStats(){
       ${open ? asDetail(top.map(([n,c])=>{ const pr = ((state.properties.find(p=>p.name===n)||{}).payRate)||0; return [esc(n),c,pr?fmtMan(pr*c):'']; }), 72) : ''}
     </div>`;
   }).join('') : '<div class="empty" style="padding:10px;">이 기간에 입력된 배정이 없어.</div>';
-  return head + `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">
+  return wrap(`<div style="margin-top:10px;">
     <div style="display:flex;gap:6px;margin-bottom:8px;">${per('month','이번 달')}${per('30','최근 30일')}${per('all','전체')}<button class="pill-btn" data-as-view="1" style="margin-left:auto;${state.asView==='prop'?'background:var(--teal);color:#fff;':''}">숙소</button></div>
     ${body}
     ${st.totalPay ? `<div style="font-size:13px;margin-top:8px;">💰 예상 지급 합계 <b>${fmtMan(st.totalPay)}</b></div>` : ''}
     <div style="font-size:12px;color:var(--ink-soft);margin-top:8px;">전체 ${st.total}건 중 ${st.total-st.unassigned}건 배정${st.unassigned?` · <b style="color:var(--clay);">배정 안 된 숙소 ${st.unassigned}건</b>`:''}<br>이름을 누르면 자주 맡은 숙소가 보여. 배정을 입력한 날만 집계돼.</div>
-  </div></div>`;
+  </div>`);
 }
 // ===== 직원 가능일 (직원이 avail.html 에서 입력 → Firestore avail/{전용토큰}) =====
 // 직원은 일정·숙소 데이터에 접근할 수 없고, 이 문서 하나만 읽고 고칠 수 있어
@@ -2072,7 +2081,10 @@ function renderAvailPanel(){
   loadAvail();
   const open = availIsOpen();
   const staff = activeStaff().filter(st=>st.role!=='manager');
-  const head = `<div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-weight:700;font-size:15px;">📅 직원 가능일</div><div style="display:flex;gap:6px;">${open?'<button class="pill-btn" id="availRefresh" aria-label="새로고침">↻</button>':''}<button class="pill-btn" id="availToggle">${open?'접기 ▴':'펼치기 ▾'}</button></div></div>`;
+  const missing = staff.filter(st=> st.availToken && (st.availMode||'can')==='can' && availOf(st) && (()=>{ const x = new Date(); x.setDate(x.getDate()+7); return !((availOf(st).done||{})[availWeekKey(ymd(x.getFullYear(), x.getMonth(), x.getDate()))]); })()).length;
+  const noLink = staff.filter(st=>!st.availToken).length;
+  const sum = [missing?'<b style="color:var(--clay);font-weight:600;">다음 주 미입력 '+missing+'명</b>':'', noLink?'링크 없음 '+noLink+'명':''].filter(Boolean).join(' · ');
+  const head = panelHead('📅 직원 가능일', sum, open, 'data-avail-toggle="1"', open?'<button class="pill-btn" id="availRefresh" aria-label="새로고침" style="flex-shrink:0;">↻</button>':'');
   if(!open) return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">${head}</div></div>`;
   const days = []; const base = new Date(); for(let i=0;i<14;i++){ const d = new Date(base.getFullYear(), base.getMonth(), base.getDate()+i); days.push({ ds:ymd(d.getFullYear(), d.getMonth(), d.getDate()), wd:d.getDay(), m:d.getMonth()+1, d:d.getDate() }); }
   const th = days.map(x=>`<th style="padding:3px 4px;font-size:11px;font-weight:600;text-align:center;white-space:nowrap;${x.wd===0?'color:var(--clay);':x.wd===6?'color:#3b6ea5;':''}">${x.m===days[0].m&&x.d!==1&&x.ds!==days[0].ds?'':x.m+'/'}${x.d}<br><span style="font-weight:500;">${DAY_NAMES[x.wd]}</span></th>`).join('');
@@ -2225,11 +2237,7 @@ function renderStaffTab(){
     if(e && (e.clockIn||e.clockOut)) sumBits.push((e.clockIn?'출근 '+e.clockIn:'')+(e.clockOut?' · 퇴근 '+e.clockOut:''));
     if(me && myOffs.includes(t)) sumBits.push('<b style="color:#8a6d1f;">오늘 휴가</b>');
     else if(myOffs.length) sumBits.push('휴가 '+leaveRangesText(myOffs.slice(0,6)));
-    const head = `<div data-mywork-toggle="1" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-        <div style="font-weight:700;font-size:15px;flex-shrink:0;">🕒 내 근태</div>
-        <div style="flex:1;min-width:0;font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${open?'':sumBits.join(' · ')}</div>
-        <button class="pill-btn" style="flex-shrink:0;">${open?'접기 ▴':'펼치기 ▾'}</button>
-      </div>`;
+    const head = panelHead('🕒 내 근태', sumBits.join(' · '), open, 'data-mywork-toggle="1"');
     if(!open) return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">${head}</div></div>`;
     return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">
       ${head}
@@ -2324,10 +2332,10 @@ function attachStaffHandlers(){
   document.querySelectorAll('[data-hourly-edit]').forEach(b=> b.onclick = ()=>{ const [sid, ds] = b.dataset.hourlyEdit.split('|'); editHourlyDay(sid, ds); });
   document.querySelectorAll('[data-hourly-nav]').forEach(b=> b.onclick = ()=>{ state.hourlyMonth = b.dataset.hourlyNav; render(); });
   document.querySelectorAll('[data-avail-link]').forEach(b=> b.onclick = ()=> sendAvailLink(b.dataset.availLink));
-  { const t = document.getElementById('availToggle'); if(t) t.onclick = ()=>{ state.availOpen = !availIsOpen(); try{ localStorage.setItem('pref:availOpen', state.availOpen?'1':'0'); }catch(e){} render(); };
-    const r = document.getElementById('availRefresh'); if(r) r.onclick = ()=>{ loadAvail(true); miniToast('불러오는 중…'); }; }
+  { document.querySelectorAll('[data-avail-toggle]').forEach(t=> t.onclick = ()=>{ state.availOpen = !availIsOpen(); try{ localStorage.setItem('pref:availOpen', state.availOpen?'1':'0'); }catch(e){} render(); });
+    const r = document.getElementById('availRefresh'); if(r) r.onclick = (ev)=>{ ev.stopPropagation(); loadAvail(true); miniToast('불러오는 중…'); }; }
   const a=document.getElementById('staffAddBtn'); if(a) a.onclick = ()=> openStaffEditSheet(null);
-  { const t=document.getElementById('asToggle'); if(t) t.onclick = ()=>{ state.asOpen = !state.asOpen; if(state.asOpen) loadAssignStats(); else render(); };
+  { document.querySelectorAll('[data-as-toggle]').forEach(t=> t.onclick = ()=>{ state.asOpen = !state.asOpen; if(state.asOpen) loadAssignStats(); else render(); });
     document.querySelectorAll('[data-as-view]').forEach(b=> b.onclick = ()=>{ state.asView = state.asView==='prop' ? 'staff' : 'prop'; render(); });
     document.querySelectorAll('[data-as-prop]').forEach(r=> r.onclick = ()=>{ state.asProp = state.asProp===r.dataset.asProp ? null : r.dataset.asProp; render(); });
     document.querySelectorAll('[data-as-period]').forEach(b=> b.onclick = ()=>{ state.asPeriod = b.dataset.asPeriod; render(); });
