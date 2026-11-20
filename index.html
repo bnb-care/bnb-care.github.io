@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-85';
+const APP_BUILD = '1102-86';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1075,6 +1075,7 @@ function openStaffEditSheet(st){
           <label class="sf-check" style="margin:0;flex-shrink:0;align-items:center;" title="링크 화면에 청소 시작/끝 버튼이 생겨"><input type="checkbox" id="sf_hourly" ${cur.hourly?'checked':''}><span>시급제</span></label>
           <input id="sf_rate" inputmode="numeric" placeholder="시급 (원)" value="${esc(String(cur.hourlyRate||''))}" style="flex:1;min-width:0;padding:10px 11px;border:1px solid var(--paper-line);border-radius:8px;font-size:14px;font-family:var(--sans);background:var(--paper);color:var(--ink);${cur.hourly?'':'visibility:hidden;'}">
         </div>
+        <div id="sf_hours">${hourlyBoxHtml(st)}</div>
       </div>
       <div class="sf-sec">
         <div class="sf-ttl">기본 근무 조건</div>
@@ -1129,10 +1130,16 @@ function openStaffEditSheet(st){
   { const ls = document.getElementById('sf_linksend'); if(ls) ls.onclick = async ()=>{ await document.getElementById('sf_save').onclick(); if(staffById(cur.id)) await sendAvailLink(cur.id); };
     const lo = document.getElementById('sf_linkopen'); if(lo) lo.onclick = ()=>{ const s0 = staffById(cur.id); if(s0 && s0.availToken) window.open(availLink(s0), '_blank'); }; }
   document.getElementById('sf_more').onclick = ()=>{ const bx = document.getElementById('sf_more_box'), on = bx.style.display==='none'; bx.style.display = on?'block':'none'; document.getElementById('sf_more').style.opacity = on?1:.55; };
+  state.sfHourlyYm = null; state.sfHourlyOpen = false;
+  const drawHours = ()=>{ const box = document.getElementById('sf_hours'); if(!box) return; const s0 = staffById(cur.id); box.innerHTML = (s0 && document.getElementById('sf_hourly').checked) ? hourlyBoxHtml(s0) : '';
+    box.querySelectorAll('[data-sfh-nav]').forEach(b=> b.onclick = ()=>{ const d0 = new Date(); const [y,m] = (state.sfHourlyYm || (d0.getFullYear()+'-'+pad2(d0.getMonth()+1))).split('-').map(Number); const x = new Date(y, m-1+Number(b.dataset.sfhNav), 1); state.sfHourlyYm = x.getFullYear()+'-'+pad2(x.getMonth()+1); drawHours(); });
+    box.querySelectorAll('[data-sfh-toggle]').forEach(b=> b.onclick = ()=>{ state.sfHourlyOpen = !state.sfHourlyOpen; drawHours(); });
+    box.querySelectorAll('[data-sfh-edit]').forEach(r=> r.onclick = async ()=>{ await editHourlyDay(cur.id, r.dataset.sfhEdit); drawHours(); }); };
+  drawHours();
   const syncDays = ()=>{ const hide = !!(st && st.availToken) && document.getElementById('sf_amode').value==='can'; document.getElementById('sf_days_wrap').style.display = hide?'none':''; document.getElementById('sf_days_off').style.display = hide?'':'none'; };
   root.querySelectorAll('[data-amode]').forEach(b=> b.onclick = ()=>{ document.getElementById('sf_amode').value = b.dataset.amode; root.querySelectorAll('[data-amode]').forEach(x=>x.classList.toggle('on', x===b)); syncDays(); });
   syncDays();
-  document.getElementById('sf_hourly').onchange = (e)=>{ document.getElementById('sf_rate').style.visibility = e.target.checked ? '' : 'hidden'; };
+  document.getElementById('sf_hourly').onchange = (e)=>{ document.getElementById('sf_rate').style.visibility = e.target.checked ? '' : 'hidden'; drawHours(); };
   drawOffs();
   document.getElementById('sf_offadd').onclick = ()=>{
     const a = document.getElementById('sf_off1').value, b2 = document.getElementById('sf_off2').value || a;
@@ -2109,6 +2116,25 @@ async function editHourlyDay(sid, ds){
     state.avail = { ...(state.avail||{}), [sid]: { ...a, clock } }; miniToast('저장됨 ✓'); render(); }
   catch(e){ miniToast('⚠️ 저장 실패', true); }
 }
+function hourlyBoxHtml(st){
+  if(!st || !st.hourly) return '';
+  if(!st.availToken) return '<div class="sf-hint" style="margin:4px 0 0 30px;">링크를 보내면 직원이 누른 청소 시작·끝 시간이 여기 모여.</div>';
+  const d0 = new Date(), ym = state.sfHourlyYm || (d0.getFullYear()+'-'+pad2(d0.getMonth()+1)); const [Y,M] = ym.split('-').map(Number);
+  const clock = ((availOf(st)||{}).clock) || {};
+  const days = Object.keys(clock).filter(ds=>ds.startsWith(ym)).sort().reverse();
+  const worked = days.filter(ds=>clockMin(clock[ds])>0); const total = worked.reduce((n,ds)=>n+clockMin(clock[ds]),0);
+  const rate = Number(st.hourlyRate)||0, pay = rate ? Math.round(total/60*rate) : 0;
+  const open = !!state.sfHourlyOpen;
+  const rows = days.map(ds=>{ const c = clock[ds], d = new Date(Y, Number(ds.slice(5,7))-1, Number(ds.slice(8))), mins = clockMin(c);
+    return `<div data-sfh-edit="${ds}" style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-top:1px solid var(--paper-line);cursor:pointer;"><span>${+ds.slice(5,7)}/${+ds.slice(8)}(${DAY_NAMES[d.getDay()]})</span><span>${esc(c.in||'?')} ~ ${c.out?esc(c.out):'<b style="color:var(--clay);">진행 중</b>'}${mins?' · '+fmtWorkDur(mins):''}</span></div>`; }).join('');
+  return `<div style="margin:6px 0 0 30px;padding:8px 10px;border:1px solid var(--paper-line);border-radius:8px;background:var(--surface);">
+    <div style="display:flex;align-items:center;gap:6px;font-size:13px;">
+      <button type="button" class="pill-btn" data-sfh-nav="-1" style="padding:3px 8px;">◀</button><b>${M}월</b><button type="button" class="pill-btn" data-sfh-nav="1" style="padding:3px 8px;">▶</button>
+      <span style="margin-left:auto;">${worked.length}일 · ${fmtWorkDur(total)}${rate?' · <b>'+pay.toLocaleString()+'원</b>':''}</span></div>
+    ${days.length ? `<button type="button" class="pill-btn" data-sfh-toggle="1" style="margin-top:6px;font-size:12px;">${open?'기록 접기 ▴':'기록 보기 ▾'}</button>` : '<div class="sf-hint">이 달 기록 없음</div>'}
+    ${open ? rows + '<div class="sf-hint">줄을 누르면 시간을 고칠 수 있어.</div>' : ''}
+  </div>`;
+}
 function renderHourlyPanel(){
   if(!(CLOUD_ENABLED && isAdmin())) return '';
   const list = activeStaff().filter(st=>st.hourly); if(!list.length) return '';
@@ -2180,7 +2206,6 @@ function renderStaffTab(){
     ${renderScheduleCalendar()}
     ${attend}
     ${renderAvailPanel()}
-    ${renderHourlyPanel()}
     ${renderAssignStats()}
     ${state.staff.length ? avail.filter(st=>st.role!=='manager').map(card).join('') + (unavail.filter(st=>st.role!=='manager').length?`<div style="font-size:12px;color:var(--ink-soft);margin:12px 0 6px;">이 날 근무 불가 · 연락 대기</div>`+unavail.filter(st=>st.role!=='manager').map(card).join(''):'') + (activeStaff().some(st=>st.role==='manager') ? `<div style="font-size:12px;color:var(--ink-soft);margin:14px 0 6px;font-weight:700;">관리직</div>`+activeStaff().filter(st=>st.role==='manager').map(card).join('') : '') : '<div class="empty">등록된 직원이 없어.<br>아래에서 추가하거나 JSON을 붙여넣어줘.</div>'}
     ${state.staff.some(st=>st.inactive) ? `<div style="margin-top:12px;">
