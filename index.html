@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-86';
+const APP_BUILD = '1102-87';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -2160,6 +2160,39 @@ function renderHourlyPanel(){
     <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">직원이 링크에서 누른 시작·끝 시간이야. 줄을 누르면 시간을 고칠 수 있어.</div>
     ${body}</div></div>`;
 }
+// ===== 내 근태: 접기 + 내 휴가 (휴가는 직원 목록의 내 offDates에 저장 → 달력에 '휴' 표시) =====
+function myWorkIsOpen(){ if(state.myWorkOpen === undefined){ let v = '0'; try{ v = localStorage.getItem('pref:myWorkOpen') || '0'; }catch(e){} state.myWorkOpen = v === '1'; } return state.myWorkOpen; }
+function myStaffId(){ try{ return localStorage.getItem('pref:myStaffId') || ''; }catch(e){ return ''; } }
+function myStaff(){ const id = myStaffId(); return id ? staffById(id) : null; }
+function leaveNextDay(ds){ const [y,m,d]=ds.split('-').map(Number); const t=new Date(y,m-1,d+1); return t.getFullYear()+'-'+pad2(t.getMonth()+1)+'-'+pad2(t.getDate()); }
+function leaveRanges(list){ const r = []; list.slice().sort().forEach(d=>{ const l = r[r.length-1]; if(l && leaveNextDay(l.b)===d){ l.b = d; l.n++; } else r.push({a:d,b:d,n:1}); }); return r; }
+function leaveMd(ds){ return (+ds.slice(5,7))+'/'+(+ds.slice(8)); }
+function leaveRangesText(list){ return leaveRanges(list).map(r=> r.a===r.b ? leaveMd(r.a) : leaveMd(r.a)+'~'+leaveMd(r.b)).join(', '); }
+function renderMyLeave(){
+  const me = myStaff();
+  const box = inner=> `<div style="margin-top:10px;padding:10px 12px;border:1px solid var(--paper-line);border-radius:var(--radius);background:var(--surface);"><div style="font-weight:700;font-size:14px;margin-bottom:6px;">🌴 내 휴가</div>${inner}</div>`;
+  if(!me){
+    const list = activeStaff().slice().sort((a,b)=> (b.role==='manager') - (a.role==='manager'));
+    return box(`<div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">처음 한 번만, 직원 목록에서 나를 골라줘. 휴가가 그 이름으로 달력에 표시돼.</div>
+      <div style="display:flex;gap:6px;"><select id="myStaffPick" style="flex:1;min-width:0;padding:8px;border:1px solid var(--paper-line);border-radius:8px;font-size:14px;background:#fff;"><option value="">나는…</option>${list.map(st=>`<option value="${esc(st.id)}">${esc(st.name)}${st.role==='manager'?' (관리직)':''}</option>`).join('')}</select><button class="pill-btn" id="myStaffSave">확인</button></div>`);
+  }
+  const t = todayStr(); const offs = (me.offDates||[]).slice().sort();
+  const up = leaveRanges(offs.filter(d=>d>=t)), past = leaveRanges(offs.filter(d=>d<t));
+  const wd = ds=> '일월화수목금토'[new Date(+ds.slice(0,4), +ds.slice(5,7)-1, +ds.slice(8)).getDay()];
+  const chip = r=>`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;border:1px solid var(--paper-line);font-size:13px;background:#FBF1D6;color:#8a6d1f;">${r.a===r.b ? leaveMd(r.a)+'('+wd(r.a)+')' : leaveMd(r.a)+'('+wd(r.a)+') ~ '+leaveMd(r.b)+'('+wd(r.b)+') · '+r.n+'일'}<button type="button" data-myleave-del="${r.a}|${r.b}" aria-label="휴가 지우기" style="border:0;background:none;font-size:14px;padding:0 2px;color:#8a6d1f;">✕</button></span>`;
+  return box(`<div style="display:flex;gap:6px;align-items:center;">
+      <input type="date" id="myLeave1" class="sf-date"><span>~</span><input type="date" id="myLeave2" class="sf-date" title="하루만이면 비워둬">
+      <button class="pill-btn" id="myLeaveAdd" style="flex-shrink:0;">추가</button></div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">하루만이면 뒤 칸은 비워 둬. 달력·일정에 "휴 ${esc(me.name)}"으로 보여.</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${up.length ? up.map(chip).join('') : '<span style="font-size:12px;color:var(--ink-soft);">앞으로 휴가 없음</span>'}</div>
+    ${past.length ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">지난 휴가 ${past.reduce((n,r)=>n+r.n,0)}일</div>` : ''}`);
+}
+async function saveMyLeave(offs){
+  const me = myStaff(); if(!me) return;
+  const i = state.staff.findIndex(x=>x.id===me.id); if(i<0) return;
+  state.staff[i] = { ...state.staff[i], offDates: Array.from(new Set(offs)).sort() };
+  await saveStaff(); render();
+}
 function renderStaffTab(){
   const avail = activeStaff().filter(st=>!staffUnavailable(st));
   const unavail = activeStaff().filter(st=>staffUnavailable(st));
@@ -2183,25 +2216,44 @@ function renderStaffTab(){
       </div></div>`;
   };
   const mp = computeThisMonthPay();
-  const attend = isAdmin() ? `
-    <div class="prop-card open" style="margin-bottom:12px;"><div style="padding:12px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-        <div style="font-weight:700;font-size:15px;">🕒 내 근태</div>
-        <button class="pill-btn" id="workSettingsToggle" aria-label="근태 설정">${state.workSettingsOpen?'⚙️ 닫기 ▴':'⚙️ 설정 ▾'}</button>
+  const attend = isAdmin() ? (()=>{
+    const open = myWorkIsOpen();
+    const me = myStaff();
+    const e = getWorkEntry(state.selectedDate || todayStr());
+    const t = todayStr(); const myOffs = me ? (me.offDates||[]).filter(d=>d>=t).sort() : [];
+    const sumBits = [];
+    if(e && (e.clockIn||e.clockOut)) sumBits.push((e.clockIn?'출근 '+e.clockIn:'')+(e.clockOut?' · 퇴근 '+e.clockOut:''));
+    if(me && myOffs.includes(t)) sumBits.push('<b style="color:#8a6d1f;">오늘 휴가</b>');
+    else if(myOffs.length) sumBits.push('휴가 '+leaveRangesText(myOffs.slice(0,6)));
+    const head = `<div data-mywork-toggle="1" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <div style="font-weight:700;font-size:15px;flex-shrink:0;">🕒 내 근태</div>
+        <div style="flex:1;min-width:0;font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${open?'':sumBits.join(' · ')}</div>
+        <button class="pill-btn" style="flex-shrink:0;">${open?'접기 ▴':'펼치기 ▾'}</button>
+      </div>`;
+    if(!open) return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">${head}</div></div>`;
+    return `<div class="prop-card open" style="margin-bottom:12px;"><div style="padding:10px 12px;">
+      ${head}
+      <div style="margin-top:10px;">
+      ${renderClockCard()}
+      ${renderMyLeave()}
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <button class="pill-btn" id="workListToggle">${state.workListOpen?'📋 근태 기록 접기 ▴':'📋 근태 기록 보기 ▾'}</button>
+        <button class="pill-btn" id="workSettingsToggle" aria-label="근태 설정" style="margin-left:auto;">${state.workSettingsOpen?'⚙️ 닫기 ▴':'⚙️ 설정 ▾'}</button>
       </div>
-      ${state.workSettingsOpen ? `<div style="background:var(--paper);border:1px solid var(--paper-line);border-radius:10px;padding:10px;margin-bottom:8px;">
+      ${state.workSettingsOpen ? `<div style="background:var(--paper);border:1px solid var(--paper-line);border-radius:10px;padding:10px;margin-top:8px;">
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
           <button class="pill-btn" id="setHourlyWageBtn">💰 시급 ${state.hourlyWage ? state.hourlyWage.toLocaleString()+'원' : '설정'}</button>
           <button class="pill-btn" id="workImportBtn">📥 기록 가져오기</button>
           <button class="pill-btn" id="exportWorkLogBtn">📤 CSV 내보내기</button>
           <input type="file" id="workImportFile" accept=".csv,.json,.txt" style="display:none;">
+          ${me?`<button class="pill-btn" id="myStaffReset">👤 나: ${esc(me.name)} (바꾸기)</button>`:''}
         </div>
-        <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">이 폰에만 저장돼.</div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">출퇴근·시급은 이 폰에만 저장돼. 휴가는 직원 목록에 저장돼서 다른 관리자도 달력에서 봐.</div>
       </div>` : ''}
-      ${renderClockCard()}
-      <button class="pill-btn" id="workListToggle" style="margin-top:10px;">${state.workListOpen?'📋 근태 기록 접기 ▴':'📋 근태 기록 보기 ▾'}</button>
       ${state.workListOpen ? renderWorkMonthList() : ''}
-    </div></div>` : '';
+      </div>
+    </div></div>`;
+  })() : '';
   return `
     ${renderScheduleCalendar()}
     ${attend}
@@ -2246,6 +2298,16 @@ function attachStaffHandlers(){
     await upsertWorkEntry(state.selectedDate || todayStr(), { [el.dataset.clockEdit==='in'?'clockIn':'clockOut']: el.value });
     render(); }; });
   document.querySelectorAll('[data-step]').forEach(el=>{ el.onclick = ()=>{ const [f,d]=el.dataset.step.split(':'); stepClockTime(f, Number(d)); }; });
+  document.querySelectorAll('[data-mywork-toggle]').forEach(el=> el.onclick = ()=>{ state.myWorkOpen = !myWorkIsOpen(); try{ localStorage.setItem('pref:myWorkOpen', state.myWorkOpen?'1':'0'); }catch(e){} render(); });
+  { const ms = document.getElementById('myStaffSave'); if(ms) ms.onclick = ()=>{ const v = document.getElementById('myStaffPick').value; if(!v){ alert('나를 골라줘.'); return; } try{ localStorage.setItem('pref:myStaffId', v); }catch(e){} render(); };
+    const mr = document.getElementById('myStaffReset'); if(mr) mr.onclick = ()=>{ if(!confirm('"나"를 다시 고를까? 저장된 휴가는 그대로 남아.')) return; try{ localStorage.removeItem('pref:myStaffId'); }catch(e){} render(); };
+    const ma = document.getElementById('myLeaveAdd'); if(ma) ma.onclick = async ()=>{
+      const me = myStaff(); if(!me) return;
+      const a = document.getElementById('myLeave1').value, b = document.getElementById('myLeave2').value || a;
+      if(!a){ alert('날짜를 골라줘.'); return; } if(b < a){ alert('끝 날짜가 시작보다 빨라.'); return; }
+      const add = []; for(let d=a, n=0; d<=b && n<62; d=leaveNextDay(d), n++) add.push(d);
+      await saveMyLeave((me.offDates||[]).concat(add)); miniToast('휴가 '+(add.length>1?leaveMd(a)+'~'+leaveMd(b):leaveMd(a))+' 저장했어 ✓'); };
+    document.querySelectorAll('[data-myleave-del]').forEach(x=> x.onclick = async ()=>{ const me = myStaff(); if(!me) return; const [a,b] = x.dataset.myleaveDel.split('|'); if(!confirm((a===b?leaveMd(a):leaveMd(a)+'~'+leaveMd(b))+' 휴가를 지울까?')) return; await saveMyLeave((me.offDates||[]).filter(d=> d<a || d>b)); }); }
   const wst=document.getElementById('workSettingsToggle'); if(wst) wst.onclick=()=>{ state.workSettingsOpen=!state.workSettingsOpen; render(); };
   const wlt=document.getElementById('workListToggle'); if(wlt) wlt.onclick=()=>{ state.workListOpen=!state.workListOpen; render(); };
   document.querySelectorAll('[data-work-month]').forEach(b=> b.onclick = ()=>{
