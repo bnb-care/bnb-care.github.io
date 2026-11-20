@@ -496,7 +496,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-70';
+const APP_BUILD = '1102-71';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1977,7 +1977,7 @@ async function sendAvailLink(id){
     if(!st.availToken){ st.availToken = tok; await saveStaff(); }
   }catch(e){ miniToast('⚠️ 링크를 못 만들었어 (Firebase 규칙에 avail 설정이 됐는지 확인해줘)', true); return; }
   const canMode = (st.availMode||'can')==='can';
-  const txt = `${st.name}님, 근무 가능일 입력 링크예요.\n${canMode?'일할 수 있는 날을 눌러서 표시하고':'일하기 어려운 날만 눌러서 표시하고'} "입력 완료"를 눌러주세요 🙏\n${canMode?'(안 누른 날은 일할 수 없는 날로 알고 있을게요)':'(안 누른 날은 모두 가능으로 알고 있을게요)'}\n\n${availLink(st)}\n\n※ ${st.name}님 전용 링크예요. 다른 분께 전달하지 말아주세요.`;
+  const txt = `${st.name}님, 근무 가능일 입력 링크예요.\n${canMode?'일할 수 있는 날을 눌러서 표시하고':'일하기 어려운 날만 눌러서 표시하고'} "입력 완료"를 눌러주세요 🙏\n${canMode?'(안 누른 날은 일할 수 없는 날로 알고 있을게요)':'(안 누른 날은 모두 가능으로 알고 있을게요)'}\n\n${availLink(st)}\n\n📱 홈 화면에 추가해 두면 다음부터 바로 열 수 있어요.\n· 아이폰: 링크를 Safari로 열기 → 공유 버튼 → 홈 화면에 추가\n· 갤럭시: 링크를 다른 브라우저로 열기 → 메뉴(⋮) → 홈 화면에 추가\n\n※ ${st.name}님 전용 링크예요. 다른 분께 전달하지 말아주세요.`;
   await shareOrCopy(txt);
 }
 function availCell(st, ds, wd){
