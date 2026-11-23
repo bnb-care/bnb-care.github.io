@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-91';
+const APP_BUILD = '1102-92';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1955,8 +1955,13 @@ async function importStaffJson(){
 }
 // 직원별 배정 현황 (기간별 건수·일수·자주 맡은 숙소)
 state.asOpen = false; state.asPeriod = 'month'; state.asData = null; state.asStaff = null; state.asView = 'staff'; state.asProp = null;
-async function loadAssignStats(){
-  try{ state.asData = await window.storage.recordsFrom('2000-01-01'); }catch(e){ state.asData = {}; }
+async function loadAssignStats(force){
+  // 이미 불러온 지 5분 안이면 바로 보여주고, 아니면 '불러오는 중'을 먼저 띄운 뒤 불러옴
+  if(!force && state.asData && state._asT && Date.now()-state._asT < 5*60*1000){ render(); return; }
+  if(state._asLoading) return;
+  state._asLoading = true; if(!state.asData) render();
+  try{ state.asData = await window.storage.recordsFrom('2000-01-01'); state._asT = Date.now(); }catch(e){ if(!state.asData) state.asData = {}; }
+  state._asLoading = false;
   render();
 }
 function assignStatsRange(){
