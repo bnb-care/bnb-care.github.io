@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-95';
+const APP_BUILD = '1102-96';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -3270,9 +3270,11 @@ function openImportSheet(){
       · <b>대표 카톡 일정표</b> 그대로 (숙소 1곳) — 예) 10월 5일(월) 29~5, 4명 체크인 ■당일<br>
       · <b>날짜별 목록</b> (여러 숙소) — 예) 10/3: 홍대102호, 창천동잇다303호<br>
       이미 등록된 일정은 그대로 두고 없는 것만 추가해. 붙여넣은 내용에 없는 앞으로의 일정은 지울지 물어봐.</div>
+      <button class="pill-btn" id="imp_ext" style="width:100%;margin-bottom:8px;">🔗 대표님 앱에서 일정 불러오기 (LG팰리스·와우산로)</button>
       <textarea id="imp_text" style="width:100%;height:240px;font-size:13px;" placeholder="- 10월 5일(월) 29~5, 4명 체크인 ■당일&#10;- 10월 7일(수) 5~7, 3명 체크인&#10;&#10;또는&#10;10/2: 동교스테이C, 엘지팰리스1208호&#10;10/3: 홍대102호, 서교동복층">${esc(inText)}</textarea>
       <div class="sheet-actions"><button class="cancel-btn" id="imp_cancel">취소</button><button class="save-btn" id="imp_next">다음 (미리보기)</button></div></div>`;
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
+    { const ie = document.getElementById('imp_ext'); if(ie) ie.onclick = ()=>{ root.remove(); openExtSheet(); }; }
     document.getElementById('imp_next').onclick = ()=>{
       inText = document.getElementById('imp_text').value;
       if(isTowelSchedule(inText)){ const td = parseTowelSchedule(inText, y); if(Object.keys(td).length){ stepMap(td); return; } }
