@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-92';
+const APP_BUILD = '1102-93';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1301,7 +1301,15 @@ function findPropByAddress(line){
   const lm = !rm ? String(line).match(/[가-힣]+동\s*\d+-\d+/) : null;
   const road = rm ? norm(rm[0]) : (lm ? norm(lm[0]) : '');
   const um = String(line).match(/(\d{3,4})\s*호/); const unit = um ? um[1] : '';
-  if(!road) return null;
+  if(!road){
+    // 주소 대신 건물 이름 + 호수 ("LG팰리스 729호", "엘지팰리스 1520호")
+    if(!unit) return null;
+    const nn = x=> norm(x).toLowerCase().replace(/엘지/g,'lg').replace(/펠리스/g,'팰리스');
+    const words = String(line).replace(/\d{3,4}\s*호/,'').split(/\s+/).map(nn).filter(w=>w.length>=2 && !/^\d+$/.test(w));
+    if(!words.length) return null;
+    const hit = activeProps().filter(p=>{ const t = nn((p.name||'')+' '+(p.address||'')); return words.every(w=>t.includes(w)) && new RegExp('(^|\\D)'+unit+'(\\D|$)').test(norm((p.name||'')+' '+(p.address||''))); });
+    return hit.length===1 ? hit[0] : null;
+  }
   const fm = String(line).match(/[가-힣]+로\s*\d+[가-힣]*길\s*\d+(?:-\d+)?/);
   let c = [];
   if(fm){ const fr = norm(fm[0]); c = activeProps().filter(p=> norm(p.address).includes(fr)); }
@@ -1364,6 +1372,11 @@ function parseCalMsg(text){
     }
     if(line.indexOf('🔑')<0 && (/[가-힣]+(?:로|길)\s*\d/.test(line) || /[가-힣]+동\s*\d+-\d+/.test(line)) && !/^\d{1,2}\s*[./]/.test(line)){
       dotHdr = line; dotProp = findPropByAddress(line); slashDs = null; cur = null; dotLast = null; pwB = ''; pwA = ''; return;
+    }
+    // 건물 이름 + 호수 머리줄 ("LG팰리스 729호") — 앱 숙소로 바로 찾아질 때만
+    if(line.indexOf('🔑')<0 && /^[A-Za-z가-힣][A-Za-z가-힣\s]*\d{3,4}\s*호\s*$/.test(line)){
+      const hp = findPropByAddress(line);
+      if(hp){ dotHdr = line; dotProp = hp; slashDs = null; cur = null; dotLast = null; pwB = ''; pwA = ''; return; }
     }
     { const pb = line.match(/변경\s*전[^:：]*[:：]\s*([^\s]+)/), pa = line.match(/변경\s*후[^:：]*[:：]\s*([^\s]+)/);
       if(dotHdr && (pb||pa) && /비번|비밀번호/.test(line) && !/^\d{1,2}\s*[./]/.test(line)){ if(pb) pwB = pb[1]; if(pa) pwA = pa[1]; return; } }
