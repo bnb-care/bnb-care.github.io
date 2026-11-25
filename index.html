@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-97';
+const APP_BUILD = '1102-99';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1585,7 +1585,7 @@ function openPasteSheet(){
     · <b>수건·인원 메시지</b> 예) 🔑 1208호 🔑 ↵ 10월 22일(1박) ↵ 게스트 2명 ↵ [작은수건] 6 → 날짜별 카드의 오늘 특이사항<br>
     · <b>대표 문자(비번)</b> 예) 안녕하세요 내일 신촌로3나길8-10 302호 입니다 ↵ 체크아웃 3916* ↵ 체크인 1240* → 그날 카드의 IN / OUT 비번<br>
     · <b>줄글</b> 예) 조정이님 엘지2개 박미정님 창천동잇다3룸 → 이 날 카드에서 찾아 배정</div>
-    ${isAdmin()?'<button class="pill-btn" id="ps_ext" style="width:100%;margin-bottom:8px;">🔗 대표님 앱에서 일정 불러오기</button>':''}
+    ${isAdmin() && extCanAck(state.extCfg)?'<button class="pill-btn" id="ps_ext" style="width:100%;margin-bottom:8px;">🔗 대표님 앱에서 일정 불러오기</button>':''}
     <textarea id="ps_text" style="width:100%;height:240px;font-size:13px;"></textarea>
     <div class="sheet-actions"><button class="cancel-btn" id="ps_cancel">닫기</button><button class="save-btn" id="ps_next">미리보기</button></div></div>`;
   document.body.appendChild(root);
@@ -1762,6 +1762,9 @@ async function extAct(cfg, fn, ...args){
   if(!r || r.ok===false) throw new Error((r && r.why) || '대표님 앱에 반영하지 못했어');
   return r;
 }
+function extMe(){ return (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : ''; }
+// 대표님 앱 연동 담당자 (cfg.ackOwner). 정해져 있으면 그 사람만 배너·불러오기·추가 일정 확인을 씀 (청소 완료 ✅ 자동 표시는 누구 폰에서든 그대로)
+function extCanAck(cfg){ return !cfg || !cfg.ackOwner || cfg.ackOwner === extMe(); }
 function extRoomOf(cfg, pid){ const m = cfg.map||{}; return Object.keys(m).find(k=> m[k]===pid) || ''; }
 function extCardDone(rec, pid){ const tk = ((rec||{}).tasks||{})[pid]; return Array.isArray(tk) && tk.length>0 && tk.every(t=>t.done); }
 // 대표님 앱 '추가 일정' 중 아직 확인 안 한 것 (그 앱 업체 화면과 같은 기준)
@@ -1865,7 +1868,7 @@ async function extAutoCheck(force){
     if(!(isAdmin && isAdmin())) return;
     if(state._extBusy) return;
     const cfg = state.extCfg || (state.extCfg = await extLoadCfg());
-    if(!cfg.pw || !Object.values(cfg.map||{}).some(Boolean)) return;
+    if(!cfg.pw || !Object.values(cfg.map||{}).some(Boolean) || !extCanAck(cfg)) return;
     let last = 0; try{ last = Number(localStorage.getItem('ext:last')||0); }catch(e){}
     if(!force && Date.now()-last < 30*60*1000 && state.extStatus) return;
     state._extBusy = true;
@@ -1879,7 +1882,7 @@ async function extAutoCheck(force){
   finally{ state._extBusy = false; if(state.tab==='today' || state.tab==='cal') render(); }
 }
 function extBannerHtml(){
-  if(!isAdmin() || !state.extCfg || !state.extCfg.pw) return '';
+  if(!isAdmin() || !state.extCfg || !state.extCfg.pw || !extCanAck(state.extCfg)) return '';
   const st = state.extStatus; const cfg = state.extCfg;
   const when = st ? (()=>{ const x = new Date(st.at); return (x.getMonth()+1)+'/'+x.getDate()+' '+pad2(x.getHours())+':'+pad2(x.getMinutes()); })() : '';
   const bits = !st ? '<span style="color:var(--ink-soft);">확인 중…</span>'
@@ -1906,6 +1909,7 @@ async function extOpenFromBanner(){
 async function openExtAckSheet(){
   if(!isAdmin()) return;
   const cfg = state.extCfg || await extLoadCfg();
+  if(!extCanAck(cfg)){ alert('대표님 앱 연동은 '+cfg.ackOwner+' 담당이야.'); return; }
   const root = document.createElement('div'); root.className = 'overlay'; root.id = 'overlay2';
   root.innerHTML = '<div class="sheet"><h2>불러오는 중…</h2></div>'; document.body.appendChild(root);
   root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
@@ -1943,6 +1947,7 @@ async function openExtAckSheet(){
 async function openExtSheet(){
   if(!isAdmin()){ alert('관리자만 쓸 수 있어.'); return; }
   const cfg = await extLoadCfg();
+  if(!extCanAck(cfg)){ alert('대표님 앱 연동은 '+cfg.ackOwner+' 담당이야.'); return; }
   const root = document.createElement('div'); root.className = 'overlay'; root.id = 'overlay2';
   const t0 = todayStr(); const days = cfg.days || 45;
   const draw = (msg, rooms)=>{
@@ -1952,6 +1957,7 @@ async function openExtSheet(){
       <div class="field"><label>업체 비밀번호</label><input id="ex_pw" type="password" inputmode="numeric" placeholder="${cfg.pw?'저장돼 있어 (바꿀 때만 입력)':'대표님께 받은 업체 비밀번호'}"></div>
       <div class="field"><label>불러올 기간</label><select id="ex_days" style="width:100%;padding:10px;border:1px solid var(--paper-line);border-radius:8px;background:var(--paper);">${[14,31,45,62].map(n=>`<option value="${n}" ${n===days?'selected':''}>오늘부터 ${n}일</option>`).join('')}</select></div>
       ${roomList.length ? `<div class="sf-ttl" style="margin-top:10px;">방 → 우리 숙소 연결</div>${roomList.map(rm=>`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;"><b style="width:70px;flex-shrink:0;">${esc(rm)}</b><select data-ex-map="${esc(rm)}" style="flex:1;min-width:0;padding:8px;border:1px solid var(--paper-line);border-radius:8px;background:#fff;"><option value="">연결 안 함 (건너뜀)</option>${activeProps().map(p=>`<option value="${esc(p.id)}" ${(cfg.map||{})[rm]===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>`).join('')}` : ''}
+      <label style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:13px;line-height:1.45;"><input type="checkbox" id="ex_ackme" ${cfg.ackOwner && cfg.ackOwner===extMe()?'checked':''} ${cfg.ackOwner && cfg.ackOwner!==extMe()?'disabled':''} style="margin-top:3px;"><span>대표님 앱 연동은 <b>내가 담당</b> (다른 관리자에게는 배너·불러오기·추가 일정 확인이 안 보여)${cfg.ackOwner && cfg.ackOwner!==extMe()?'<br><span style="color:var(--ink-soft);">지금 담당: '+esc(cfg.ackOwner)+'</span>':''}</span></label>
       <div class="msg" id="ex_msg" style="margin-top:10px;font-size:13px;">${msg||''}</div>
       <div class="sheet-actions"><button class="cancel-btn" id="ex_close">닫기</button><button class="save-btn" id="ex_go">불러와서 미리보기</button></div></div>`;
     root.querySelector('#ex_close').onclick = ()=> root.remove();
@@ -1961,6 +1967,7 @@ async function openExtSheet(){
     const btn = root.querySelector('#ex_go'), m = root.querySelector('#ex_msg');
     const pw = root.querySelector('#ex_pw').value.trim(); if(pw){ cfg.pw = pw; try{ localStorage.removeItem('ext:tok'); }catch(e){} }
     cfg.days = Number(root.querySelector('#ex_days').value)||45;
+    { const am = root.querySelector('#ex_ackme'); if(am && !am.disabled){ if(am.checked) cfg.ackOwner = extMe(); else if(cfg.ackOwner===extMe()) delete cfg.ackOwner; } }
     root.querySelectorAll('[data-ex-map]').forEach(s=>{ cfg.map = cfg.map||{}; if(s.value) cfg.map[s.dataset.exMap] = s.value; else delete cfg.map[s.dataset.exMap]; });
     if(!cfg.pw){ m.style.color='var(--clay)'; m.textContent = '업체 비밀번호를 넣어줘.'; return; }
     btn.disabled = true; m.style.color=''; m.textContent = '불러오는 중…';
@@ -3381,7 +3388,7 @@ function openImportSheet(){
       · <b>대표 카톡 일정표</b> 그대로 (숙소 1곳) — 예) 10월 5일(월) 29~5, 4명 체크인 ■당일<br>
       · <b>날짜별 목록</b> (여러 숙소) — 예) 10/3: 홍대102호, 창천동잇다303호<br>
       이미 등록된 일정은 그대로 두고 없는 것만 추가해. 붙여넣은 내용에 없는 앞으로의 일정은 지울지 물어봐.</div>
-      <button class="pill-btn" id="imp_ext" style="width:100%;margin-bottom:8px;">🔗 대표님 앱에서 일정 불러오기 (LG팰리스·와우산로)</button>
+      ${isAdmin() && extCanAck(state.extCfg) ? '<button class="pill-btn" id="imp_ext" style="width:100%;margin-bottom:8px;">🔗 대표님 앱에서 일정 불러오기 (LG팰리스·와우산로)</button>' : ''}
       <textarea id="imp_text" style="width:100%;height:240px;font-size:13px;" placeholder="- 10월 5일(월) 29~5, 4명 체크인 ■당일&#10;- 10월 7일(수) 5~7, 3명 체크인&#10;&#10;또는&#10;10/2: 동교스테이C, 엘지팰리스1208호&#10;10/3: 홍대102호, 서교동복층">${esc(inText)}</textarea>
       <div class="sheet-actions"><button class="cancel-btn" id="imp_cancel">취소</button><button class="save-btn" id="imp_next">다음 (미리보기)</button></div></div>`;
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
