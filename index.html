@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-93';
+const APP_BUILD = '1102-95';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1585,11 +1585,13 @@ function openPasteSheet(){
     · <b>수건·인원 메시지</b> 예) 🔑 1208호 🔑 ↵ 10월 22일(1박) ↵ 게스트 2명 ↵ [작은수건] 6 → 날짜별 카드의 오늘 특이사항<br>
     · <b>대표 문자(비번)</b> 예) 안녕하세요 내일 신촌로3나길8-10 302호 입니다 ↵ 체크아웃 3916* ↵ 체크인 1240* → 그날 카드의 IN / OUT 비번<br>
     · <b>줄글</b> 예) 조정이님 엘지2개 박미정님 창천동잇다3룸 → 이 날 카드에서 찾아 배정</div>
+    ${isAdmin()?'<button class="pill-btn" id="ps_ext" style="width:100%;margin-bottom:8px;">🔗 대표님 앱에서 일정 불러오기</button>':''}
     <textarea id="ps_text" style="width:100%;height:240px;font-size:13px;"></textarea>
     <div class="sheet-actions"><button class="cancel-btn" id="ps_cancel">닫기</button><button class="save-btn" id="ps_next">미리보기</button></div></div>`;
   document.body.appendChild(root);
   root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
   document.getElementById('ps_cancel').onclick = ()=> root.remove();
+  { const ex = document.getElementById('ps_ext'); if(ex) ex.onclick = ()=>{ root.remove(); openExtSheet(); }; }
   document.getElementById('ps_next').onclick = ()=>{
     const text = document.getElementById('ps_text').value;
     const own = parseOwnerPass(text);
@@ -1713,6 +1715,161 @@ async function calPreviewParts(entries){
   };
   return { html, apply };
 }
+// ===== 외부 일정 연결: 대표님이 만든 청소 관리 앱(업체용)에서 예약을 읽어 와 청소 일정으로 바꿈 =====
+// 설정은 kv 'ext:hostapp' {name, url, pw, map:{방이름:숙소id}} — 관리자만 화면에서 보고 바꿈. 읽기만 하고 그 앱에는 아무것도 쓰지 않음
+const EXT_KEY = 'ext:hostapp';
+const EXT_DEFAULT_URL = 'https://script.google.com/macros/s/AKfycbz6MOG4oQWr_PCwk5tRgXs4LFCb-N6RbdH2IPN-gZF3HvNiyBP0BBkUjNom1HCAOWYvHw/exec';
+async function extLoadCfg(){ try{ const x = await window.storage.get(EXT_KEY, false); if(x && x.value) return JSON.parse(x.value); }catch(e){} return { name:'LG팰리스·와우산로', url:EXT_DEFAULT_URL, pw:'', map:{} }; }
+async function extSaveCfg(c){ await window.storage.set(EXT_KEY, JSON.stringify(c), false); }
+function extDevId(){ let d=''; try{ d = localStorage.getItem('ext:dev')||''; }catch(e){} if(!/^[a-z0-9]{12}$/.test(d)){ const A='abcdefghijklmnopqrstuvwxyz0123456789'; d=''; for(let i=0;i<12;i++) d+=A[Math.floor(Math.random()*36)]; try{ localStorage.setItem('ext:dev', d); }catch(e){} } return d; }
+async function extCall(url, fn, args){
+  const r = await fetch(url, { method:'POST', credentials:'omit', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ fn, args }) });
+  if(!r.ok) throw new Error('http '+r.status);
+  return r.json();
+}
+async function extFetch(cfg){
+  const d = extDevId();
+  let tok = ''; try{ tok = localStorage.getItem('ext:tok')||''; }catch(e){}
+  let resp = tok ? await extCall(cfg.url, 'apiLoad', [{ v:tok, d }]) : null;
+  if(!resp || resp.ok === false){
+    if(!cfg.pw) throw new Error('업체 비밀번호가 없어');
+    const lg = await extCall(cfg.url, 'apiLogin', ['vendor', cfg.pw]);
+    if(!lg || !lg.ok) throw new Error(lg && lg.why==='lock' ? '여러 번 틀려서 10분 동안 잠겼어. 잠시 뒤에 다시 해줘' : '업체 비밀번호가 맞지 않아');
+    tok = lg.token; try{ localStorage.setItem('ext:tok', tok); }catch(e){}
+    resp = await extCall(cfg.url, 'apiLoad', [{ v:tok, d }]);
+  }
+  if(!resp || !resp.data) throw new Error((resp && resp.why) || '일정을 받지 못했어');
+  return resp;
+}
+// 그 앱과 같은 규칙: 체크아웃날 청소, 같은 날 다음 손님 체크인이면 당일(먼저), 수건은 다음 손님 인원·박수로
+function extYmdAdd(ds, n){ const [y,m,d] = ds.split('-').map(Number); const t = new Date(y, m-1, d+n); return t.getFullYear()+'-'+pad2(t.getMonth()+1)+'-'+pad2(t.getDate()); }
+function extDiff(a, b){ const [y1,m1,d1]=a.split('-').map(Number), [y2,m2,d2]=b.split('-').map(Number); return Math.round((new Date(y2,m2-1,d2)-new Date(y1,m1-1,d1))/86400000); }
+function extTowels(room, g, n){ const cap = room==='와우산로'?30:25; let small; if(!(g>0)||!(n>0)) small = g*n; else { const per = (n===1 && room!=='와우산로')?2:n; small = g*per<=cap ? g*per : g*Math.max(1, Math.min(per, Math.floor(cap/g))); } const big = (n===1 && room!=='와우산로')?0:g; return { small, big }; }
+function extBuild(data, cfg, from, to, now){
+  now = now || {}; const nToday = now.today || todayStr(); const nMin = typeof now.nowMin==='number' ? now.nowMin : (new Date().getHours()*60+new Date().getMinutes());
+  const cutoffPassed = ds=>{ const d1 = extYmdAdd(ds, -1); return nToday > d1 || (nToday === d1 && nMin >= 900); };
+  const res = (data.res||[]).filter(r=> r.status==='확정' && /^\d{4}-\d\d-\d\d$/.test(r.checkin||'') && /^\d{4}-\d\d-\d\d$/.test(r.checkout||'') && r.checkout>r.checkin && Number(r.guests)>0);
+  const rooms = Object.keys(data.rooms||{}).length ? Object.keys(data.rooms) : [...new Set(res.map(r=>r.room))];
+  const out = [];
+  rooms.forEach(room=>{
+    const rs = res.filter(r=>r.room===room).sort((a,b)=> a.checkin<b.checkin?-1:1);
+    const info = (data.rooms||{})[room] || {};
+    const prop = cfg.map && cfg.map[room] ? propById(cfg.map[room]) : null;
+    for(let ds = from; ds <= to; ds = extYmdAdd(ds, 1)){
+      const co = rs.find(r=>r.checkout===ds), ci = rs.find(r=>r.checkin===ds), stay = rs.some(r=> r.checkin<ds && ds<r.checkout);
+      // 그 앱 업체 화면과 같은 규칙: 체크아웃날 청소 / 빈 방에 새 손님이 오는 날은 전날 15시 전까지는 청소로 보여 줌
+      if(!co && !(ci && !stay && !cutoffPassed(ds))) continue;
+      const notes = (data.notes||[]).filter(x=>x.room===room && x.date===ds && x.text).map(x=>x.text);
+      let pri = false, txt;
+      if(ci && (co || (!stay && !cutoffPassed(ds)))){ const n = extDiff(ci.checkin, ci.checkout), g = Number(ci.guests), t = extTowels(room, g, n); pri = true; txt = ['당일 체크인', n+'박', '게스트 '+g+'명', '작은수건 '+t.small, '큰수건 '+t.big]; }
+      else if(stay){ continue; }
+      else { const nx = rs.find(r=>r.checkin>ds); txt = ['당일예약 없음']; if(nx){ const n = extDiff(nx.checkin, nx.checkout), g = Number(nx.guests), t = extTowels(room, g, n); txt.push('다음 '+(+nx.checkin.slice(5,7))+'/'+(+nx.checkin.slice(8))+' 체크인 '+n+'박 '+g+'명', '작은수건 '+t.small, '큰수건 '+t.big); } }
+      notes.forEach(x=> txt.push(x));
+      out.push({ hdr: room, prop, ds, md: (+ds.slice(5,7))+'/'+(+ds.slice(8)), nights:'', guests:'', small:'', large:'', none:false, note: txt.join(' · '), pri, short:true, sched:true, pw: info.pw ? { b:String(info.pw), a:'' } : null, extRoom: room });
+    }
+  });
+  return out.sort((a,b)=> a.ds<b.ds?-1:a.ds>b.ds?1:0);
+}
+// 불러온 예약 → (새로 넣을 일정, 우리 일정에만 있는 곳) 계산
+async function extDiffWithOurs(cfg, resp){
+  const t0 = todayStr(), to = extYmdAdd(t0, (cfg.days||45)-1);
+  const entries = extBuild(resp.data, cfg, t0, to, resp.now).filter(e=>e.prop);
+  let recs = {}; try{ recs = await window.storage.recordsFrom(t0); }catch(e){}
+  const mapped = new Set(Object.values(cfg.map||{}).filter(Boolean)), has = new Set(entries.map(e=>e.ds+'|'+e.prop.id));
+  const fresh = entries.filter(e=> !((recs[e.ds]||{}).propertyIds||[]).includes(e.prop.id));
+  const extra = [];
+  Object.keys(recs).sort().forEach(ds=>{ if(ds<t0 || ds>to) return; ((recs[ds]||{}).propertyIds||[]).forEach(id=>{ if(mapped.has(id) && !has.has(ds+'|'+id)){ const p = propById(id); extra.push({ ds, id, label:(+ds.slice(5,7))+'/'+(+ds.slice(8))+' '+(p?p.name:id) }); } }); });
+  return { entries, fresh, extra };
+}
+async function extShowPreview(cfg, resp){
+  const d = await extDiffWithOurs(cfg, resp);
+  if(!d.entries.length && !d.extra.length){ alert('불러올 청소 일정이 없어.'); return; }
+  if(d.extra.length) alert('대표님 앱에는 청소가 없는데 우리 일정에만 있는 곳이 있어. 취소됐을 수 있으니 확인해줘:\n\n'+d.extra.map(x=>x.label).join('\n'));
+  if(d.entries.length) openPastePreview([], d.entries, '', []);
+  state.extStatus = { at: Date.now(), newN: d.fresh.length, extra: d.extra, err:'' };
+  try{ localStorage.setItem('ext:last', String(Date.now())); }catch(e){}
+}
+// 앱 열 때·다시 볼 때 자동 확인 (마지막 확인 후 30분 지났을 때만, 읽기만)
+async function extAutoCheck(force){
+  try{
+    if(!(isAdmin && isAdmin())) return;
+    if(state._extBusy) return;
+    const cfg = state.extCfg || (state.extCfg = await extLoadCfg());
+    if(!cfg.pw || !Object.values(cfg.map||{}).some(Boolean)) return;
+    let last = 0; try{ last = Number(localStorage.getItem('ext:last')||0); }catch(e){}
+    if(!force && Date.now()-last < 30*60*1000 && state.extStatus) return;
+    state._extBusy = true;
+    const resp = await extFetch(cfg);
+    const d = await extDiffWithOurs(cfg, resp);
+    state.extStatus = { at: Date.now(), newN: d.fresh.length, extra: d.extra, err:'' };
+    try{ localStorage.setItem('ext:last', String(Date.now())); }catch(e){}
+  }catch(e){ state.extStatus = { at: Date.now(), newN:0, extra:[], err: String(e && e.message || e) }; }
+  finally{ state._extBusy = false; if(state.tab==='today' || state.tab==='cal') render(); }
+}
+function extBannerHtml(){
+  if(!isAdmin() || !state.extCfg || !state.extCfg.pw) return '';
+  const st = state.extStatus; const cfg = state.extCfg;
+  const when = st ? (()=>{ const x = new Date(st.at); return (x.getMonth()+1)+'/'+x.getDate()+' '+pad2(x.getHours())+':'+pad2(x.getMinutes()); })() : '';
+  const bits = !st ? '<span style="color:var(--ink-soft);">확인 중…</span>'
+    : st.err ? '<b style="color:var(--clay);">못 불러왔어</b>'
+    : (st.newN || st.extra.length) ? [st.newN?'<b style="color:var(--teal);">새 일정 '+st.newN+'건</b>':'', st.extra.length?'<b style="color:var(--clay);">취소 의심 '+st.extra.length+'건</b>':''].filter(Boolean).join(' · ')
+    : '<span style="color:var(--ink-soft);">바뀐 것 없음 ✓</span>';
+  const hot = st && !st.err && (st.newN || st.extra.length);
+  return `<div class="prop-card open" style="margin-bottom:10px;${hot?'border-color:var(--teal);':''}"><div style="padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:0;font-size:13px;line-height:1.45;">🔗 <b>${esc(cfg.name||'대표님 앱')}</b><br>${bits}${when?` <span style="color:var(--ink-soft);font-size:11.5px;">· ${when} 확인</span>`:''}</div>
+    <a class="pill-btn" href="${esc(cfg.siteUrl||'https://dexstreang.github.io/cleaning/')}" target="_blank" rel="noopener" style="flex-shrink:0;text-decoration:none;">대표님 앱 열기</a>
+    <button class="pill-btn" data-ext-open="1" style="flex-shrink:0;${hot?'background:var(--teal);color:#fff;border-color:var(--teal);':''}">${hot?'확인하기':'불러오기'}</button>
+  </div></div>`;
+}
+async function extOpenFromBanner(){
+  const cfg = state.extCfg || await extLoadCfg();
+  if(!cfg.pw){ openExtSheet(); return; }
+  miniToast('대표님 앱에서 불러오는 중…');
+  try{ const resp = await extFetch(cfg); await extShowPreview(cfg, resp); }
+  catch(e){ alert('못 불러왔어: '+(e.message||e)+'\n\n비밀번호나 방 연결은 📥 → 🔗 화면에서 확인해줘.'); }
+  render();
+}
+async function openExtSheet(){
+  if(!isAdmin()){ alert('관리자만 쓸 수 있어.'); return; }
+  const cfg = await extLoadCfg();
+  const root = document.createElement('div'); root.className = 'overlay'; root.id = 'overlay2';
+  const t0 = todayStr(); const days = cfg.days || 45;
+  const draw = (msg, rooms)=>{
+    const roomList = rooms || Object.keys(cfg.map||{});
+    root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>🔗 대표님 앱에서 일정 불러오기</h2>
+      <div class="sf-hint" style="margin-bottom:8px;">${esc(cfg.name||'')} 앱의 <b>업체 화면</b>과 같은 예약을 읽어서, 체크아웃날 청소 일정으로 바꿔. 그 앱에는 아무것도 쓰지 않고 읽기만 해.</div>
+      <div class="field"><label>업체 비밀번호</label><input id="ex_pw" type="password" inputmode="numeric" placeholder="${cfg.pw?'저장돼 있어 (바꿀 때만 입력)':'대표님께 받은 업체 비밀번호'}"></div>
+      <div class="field"><label>불러올 기간</label><select id="ex_days" style="width:100%;padding:10px;border:1px solid var(--paper-line);border-radius:8px;background:var(--paper);">${[14,31,45,62].map(n=>`<option value="${n}" ${n===days?'selected':''}>오늘부터 ${n}일</option>`).join('')}</select></div>
+      ${roomList.length ? `<div class="sf-ttl" style="margin-top:10px;">방 → 우리 숙소 연결</div>${roomList.map(rm=>`<div style="display:flex;gap:8px;align-items:center;margin-top:6px;"><b style="width:70px;flex-shrink:0;">${esc(rm)}</b><select data-ex-map="${esc(rm)}" style="flex:1;min-width:0;padding:8px;border:1px solid var(--paper-line);border-radius:8px;background:#fff;"><option value="">연결 안 함 (건너뜀)</option>${activeProps().map(p=>`<option value="${esc(p.id)}" ${(cfg.map||{})[rm]===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>`).join('')}` : ''}
+      <div class="msg" id="ex_msg" style="margin-top:10px;font-size:13px;">${msg||''}</div>
+      <div class="sheet-actions"><button class="cancel-btn" id="ex_close">닫기</button><button class="save-btn" id="ex_go">불러와서 미리보기</button></div></div>`;
+    root.querySelector('#ex_close').onclick = ()=> root.remove();
+    root.querySelector('#ex_go').onclick = go;
+  };
+  const go = async ()=>{
+    const btn = root.querySelector('#ex_go'), m = root.querySelector('#ex_msg');
+    const pw = root.querySelector('#ex_pw').value.trim(); if(pw){ cfg.pw = pw; try{ localStorage.removeItem('ext:tok'); }catch(e){} }
+    cfg.days = Number(root.querySelector('#ex_days').value)||45;
+    root.querySelectorAll('[data-ex-map]').forEach(s=>{ cfg.map = cfg.map||{}; if(s.value) cfg.map[s.dataset.exMap] = s.value; else delete cfg.map[s.dataset.exMap]; });
+    if(!cfg.pw){ m.style.color='var(--clay)'; m.textContent = '업체 비밀번호를 넣어줘.'; return; }
+    btn.disabled = true; m.style.color=''; m.textContent = '불러오는 중…';
+    let resp; try{ resp = await extFetch(cfg); }catch(e){ btn.disabled = false; m.style.color='var(--clay)'; m.textContent = '못 불러왔어: '+(e.message||e); return; }
+    // 처음 보는 방은 이름으로 추측해서 연결
+    const rooms = Object.keys(resp.data.rooms||{}).length ? Object.keys(resp.data.rooms) : [...new Set((resp.data.res||[]).map(r=>r.room))];
+    let newRoom = false;
+    rooms.forEach(rm=>{ cfg.map = cfg.map||{}; if(cfg.map[rm]!==undefined) return; newRoom = true; const num = String(rm).match(/\d{3,4}/); let hit = null;
+      if(num){ const hs = activeProps().filter(p=> new RegExp('(^|\\D)'+num[0]+'(\\D|$)').test(p.name) && /lg|엘지|팰리스|펠리스/i.test(p.name+' '+(p.address||''))); if(hs.length===1) hit = hs[0]; else { const h2 = activeProps().filter(p=> new RegExp('(^|\\D)'+num[0]+'(\\D|$)').test(p.name)); if(h2.length===1) hit = h2[0]; } }
+      else { const hs = activeProps().filter(p=> (p.name+' '+(p.address||'')).replace(/\s/g,'').includes(String(rm).replace(/\s/g,''))); if(hs.length===1) hit = hs[0]; }
+      cfg.map[rm] = hit ? hit.id : ''; });
+    try{ await extSaveCfg(cfg); state.extCfg = cfg; }catch(e){}
+    if(newRoom){ btn.disabled = false; draw('<span style="color:var(--teal);">연결됐어 ✓ 방 '+rooms.length+'개를 찾았어. 우리 숙소랑 맞는지 확인하고 한 번 더 눌러줘.</span>', rooms); return; }
+    root.remove();
+    await extShowPreview(cfg, resp);
+  };
+  draw('', Object.keys(cfg.map||{}));
+  document.body.appendChild(root);
+  root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
+}
 async function openPastePreview(groups, entries, text, loose){
   const root = document.createElement('div'); root.className='overlay'; root.id='overlay';
   root.innerHTML = `<div class="sheet"><h2>확인 중…</h2></div>`;
@@ -1755,6 +1912,7 @@ async function openPastePreview(groups, entries, text, loose){
     try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
     render();
     alert(msgs.join('\n')+(failed?`\n저장 실패 ${failed}건`:''));
+    if(cr && state.extCfg && state.extCfg.pw && entries.some(e=>e.extRoom)) extAutoCheck(true);
   };
 }
 function openSendSheet(){
@@ -4063,9 +4221,10 @@ function render(){
 
   if(state.tab === 'today'){
     fab.style.display='none';
-    view.innerHTML = renderToday();
+    view.innerHTML = extBannerHtml() + renderToday();
     attachHandlers();
     setupHistoryIfNeeded();
+    view.querySelectorAll('[data-ext-open]').forEach(b=> b.onclick = extOpenFromBanner);
   } else if(state.tab === 'all'){
     fab.style.display=isAdmin()?'flex':'none';
     fab.style.alignItems='center';
@@ -4074,8 +4233,9 @@ function render(){
     attachHandlers();
   } else if(state.tab === 'cal'){
     fab.style.display='none';
-    view.innerHTML = renderCalendarTab();
+    view.innerHTML = extBannerHtml() + renderCalendarTab();
     attachCalHandlers();
+    view.querySelectorAll('[data-ext-open]').forEach(b=> b.onclick = extOpenFromBanner);
   } else if(state.tab === 'staff'){
     fab.style.display='none';
     view.innerHTML = renderStaffTab();
@@ -6021,6 +6181,8 @@ async function startApp(){
   ensureStaywithNoTasks();
   ensurePayRates();
   ensureLobbySplit();
+  setTimeout(()=>extAutoCheck(false), 2500);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') extAutoCheck(false); });
   undoAvailOffMode();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
   if(cloud && isAdmin() && state.properties.length === 0 && localStorage.getItem(KEY_PROPS)){
