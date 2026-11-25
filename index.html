@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-102';
+const APP_BUILD = '1102-104';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1851,7 +1851,8 @@ async function extDiffWithOurs(cfg, resp){
   const entries = all.filter(e=> !e.tent); // 임시(빈 방 입실) 일정은 넣지 않음 → 중복 청소 방지
   let recs = {}; try{ recs = await window.storage.recordsFrom(t0); }catch(e){}
   const inOurs = e=> ((recs[e.ds]||{}).propertyIds||[]).includes(e.prop.id);
-  const mapped = new Set(Object.values(cfg.map||{}).filter(Boolean)), has = new Set(entries.map(e=>e.ds+'|'+e.prop.id));
+  // 임시 일정도 대표님 앱엔 보이니까 '취소 의심'에서는 빼고 따로 알려 줌 (전날 15시가 지나 사라지면 그때 취소 의심으로 뜸)
+  const mapped = new Set(Object.values(cfg.map||{}).filter(Boolean)), has = new Set(all.map(e=>e.ds+'|'+e.prop.id));
   const fresh = entries.filter(e=> !inOurs(e));
   // 우리 일정에 이미 있는 임시 일정 = 중복 청소일 수 있음
   // 이미 카드가 있는데 대표님 앱은 당일 체크인인 곳 (우리 카드엔 당일 표시가 없음)
@@ -1861,18 +1862,23 @@ async function extDiffWithOurs(cfg, resp){
     .concat(entries.filter(e=> !e.pri && inOurs(e) && isPri(e) && !e.prop.alwaysPriority).map(e=> lab(e)+' → 우리 카드는 🔴 당일인데 대표님 앱은 당일예약 없음'));
   const tentOurs = all.filter(e=> e.tent && inOurs(e)).map(e=>({ ds:e.ds, id:e.prop.id, label:(+e.ds.slice(5,7))+'/'+(+e.ds.slice(8))+' '+e.prop.name }));
   const extra = [];
-  Object.keys(recs).sort().forEach(ds=>{ if(ds<t0 || ds>to) return; ((recs[ds]||{}).propertyIds||[]).forEach(id=>{ if(mapped.has(id) && !has.has(ds+'|'+id)){ const p = propById(id); extra.push({ ds, id, label:(+ds.slice(5,7))+'/'+(+ds.slice(8))+' '+(p?p.name:id) }); } }); });
+  const t1 = extYmdAdd(t0, 1);
+  Object.keys(recs).sort().forEach(ds=>{ if(ds<t0 || ds>to) return; ((recs[ds]||{}).propertyIds||[]).forEach(id=>{ if(mapped.has(id) && !has.has(ds+'|'+id)){ const p = propById(id), room = extRoomOf(cfg, id);
+    const ch = (resp.data.changes||[]).filter(c=> c && c.date===ds && c.room===room && c.kind==='취소').pop();
+    const w = (staffById(((recs[ds]||{}).assign||{})[id])||{}).name || '';
+    extra.push({ ds, id, room, urgent: ds<=t1, worker:w, hostCx: !!ch, label:(+ds.slice(5,7))+'/'+(+ds.slice(8))+' '+(p?p.name:id) }); } }); });
   return { entries, fresh, extra, tentOurs, priMiss };
 }
 async function extShowPreview(cfg, resp){
   const d = await extDiffWithOurs(cfg, resp);
   if(!d.fresh.length && !d.extra.length && !d.priMiss.length){ alert('새로 넣을 일정이 없어. 우리 일정과 같아 ✓'); }
-  if(d.extra.length) alert('대표님 앱에는 청소가 없는데 우리 일정에만 있는 곳이 있어. 취소됐거나 중복일 수 있으니 확인해줘:\n\n'+d.extra.map(x=>x.label).join('\n')+(d.tentOurs.length?'\n\n(이 중 '+d.tentOurs.map(x=>x.label).join(', ')+'은 빈 방에 손님이 들어오는 날이야. 앞 퇴실날 청소했으면 빼도 돼)':''));
+  if(d.extra.length) await openExtCancelSheet(d.extra);
+  if(d.tentOurs.length) alert('⏳ 대표님 앱에 \'임시\'로 떠 있는 청소야 (빈 방에 손님이 들어오는 날):\n\n'+d.tentOurs.map(x=>x.label).join('\n')+'\n\n전날 오후 3시까지 앞 예약이 들어오면 당일 청소로 확정되고, 안 들어오면 대표님 앱에서도 사라져. 카드는 그대로 두고, 전날 3시 뒤에 배너에 \'취소 의심\'으로 뜨면 그때 지워줘.');
   if(d.priMiss.length) alert('당일 체크인 표시(🔴)가 대표님 앱과 다른 곳이야. 확인해줘:\n\n'+d.priMiss.join('\n'));
   // 이미 카드가 있는 날은 건드리지 않음 (특이사항 중복 방지) → 새 카드만 미리보기
   if(d.fresh.length) openPastePreview([], d.fresh, '', []);
   state.extResp = resp;
-  state.extStatus = { at: Date.now(), newN: d.fresh.length, extra: d.extra, err:'', ackN: extUnacked(resp).length, doneFail:0 };
+  state.extCancelKeys = new Set(d.extra.map(x=>x.ds+'|'+x.id)); state.extStatus = { at: Date.now(), newN: d.fresh.length, extra: d.extra, err:'', ackN: extUnacked(resp).length, doneFail:0 };
   try{ localStorage.setItem('ext:last', String(Date.now())); }catch(e){}
 }
 // 앱 열 때·다시 볼 때 자동 확인 (마지막 확인 후 30분 지났을 때만, 읽기만)
@@ -1883,13 +1889,13 @@ async function extAutoCheck(force){
     const cfg = state.extCfg || (state.extCfg = await extLoadCfg());
     if(!cfg.pw || !Object.values(cfg.map||{}).some(Boolean) || !extCanAck(cfg)) return;
     let last = 0; try{ last = Number(localStorage.getItem('ext:last')||0); }catch(e){}
-    if(!force && Date.now()-last < 30*60*1000 && state.extStatus) return;
+    if(!force && Date.now()-last < 10*60*1000 && state.extStatus) return;
     state._extBusy = true;
     const resp = await extFetch(cfg);
     const d = await extDiffWithOurs(cfg, resp);
     let sd = { on:0, off:0, fail:0 }; try{ sd = await extSyncDone(cfg, resp); }catch(e){}
     state.extResp = resp;
-    state.extStatus = { at: Date.now(), newN: d.fresh.length, extra: d.extra, err:'', ackN: extUnacked(resp).length, doneFail: sd.fail };
+    state.extCancelKeys = new Set(d.extra.map(x=>x.ds+'|'+x.id)); state.extStatus = { at: Date.now(), newN: d.fresh.length, extra: d.extra, err:'', ackN: extUnacked(resp).length, doneFail: sd.fail };
     try{ localStorage.setItem('ext:last', String(Date.now())); }catch(e){}
   }catch(e){ state.extStatus = { at: Date.now(), newN:0, extra:[], err: String(e && e.message || e), ackN:0, doneFail:0 }; }
   finally{ state._extBusy = false; if(state.tab==='today' || state.tab==='cal') render(); }
@@ -1903,12 +1909,14 @@ function extBannerHtml(){
     : (st.newN || st.extra.length || st.ackN || st.doneFail) ? [st.newN?'<b style="color:var(--teal);">새 일정 '+st.newN+'건</b>':'', st.extra.length?'<b style="color:var(--clay);">취소 의심 '+st.extra.length+'건</b>':'', st.ackN?'<b style="color:var(--clay);">추가 일정 확인 전 '+st.ackN+'건</b>':'', st.doneFail?'<b style="color:var(--clay);">완료 표시 실패 '+st.doneFail+'건</b>':''].filter(Boolean).join(' · ')
     : '<span style="color:var(--ink-soft);">바뀐 것 없음 ✓</span>';
   const hot = st && !st.err && (st.newN || st.extra.length);
-  return `<div class="prop-card open" style="margin-bottom:10px;${hot?'border-color:var(--teal);':''}"><div style="padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+  const cxList = st && !st.err && st.extra.length ? `<div style="margin-top:6px;padding:6px 8px;border-radius:8px;background:#fdecea;font-size:12.5px;line-height:1.5;">⚠️ <b>청소 취소 의심</b> — 대표님 앱에는 청소가 없어<br>${st.extra.slice(0,6).map(x=>`<span style="${x.urgent?'color:var(--clay);font-weight:700;':''}">${x.urgent?'🚨 ':''}${esc(x.label)}${x.worker?' · 배정 '+esc(x.worker):''}${x.hostCx?' · 대표님 앱 취소 기록':''}</span>`).join('<br>')}${st.extra.length>6?'<br>외 '+(st.extra.length-6)+'건':''}</div>` : '';
+  return `<div class="prop-card open" style="margin-bottom:10px;${st && !st.err && st.extra.length ? 'border-color:var(--clay);border-width:2px;' : hot?'border-color:var(--teal);':''}"><div style="padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
     <div style="flex:1;min-width:0;font-size:13px;line-height:1.45;">🔗 <b>${esc(cfg.name||'대표님 앱')}</b><br>${bits}${when?` <span style="color:var(--ink-soft);font-size:11.5px;">· ${when} 확인</span>`:''}</div>
     <a class="pill-btn" href="${esc(cfg.siteUrl||'https://dexstreang.github.io/cleaning/')}" target="_blank" rel="noopener" style="flex-shrink:0;text-decoration:none;">대표님 앱 열기</a>
+    ${st && !st.err && st.extra.length ? '<button class="pill-btn" data-ext-cx="1" style="flex-shrink:0;background:var(--clay);color:#fff;border-color:var(--clay);">취소 확인</button>' : ''}
     ${st && st.ackN ? '<button class="pill-btn" data-ext-ack="1" style="flex-shrink:0;background:var(--clay);color:#fff;border-color:var(--clay);">추가 일정 확인</button>' : ''}
     <button class="pill-btn" data-ext-open="1" style="flex-shrink:0;${hot?'background:var(--teal);color:#fff;border-color:var(--teal);':''}">${hot?'확인하기':'불러오기'}</button>
-  </div></div>`;
+  </div>${cxList?'<div style="padding:0 12px 10px;">'+cxList+'</div>':''}</div>`;
 }
 async function extOpenFromBanner(){
   const cfg = state.extCfg || await extLoadCfg();
@@ -1917,6 +1925,51 @@ async function extOpenFromBanner(){
   try{ const resp = await extFetch(cfg); await extShowPreview(cfg, resp); }
   catch(e){ alert('못 불러왔어: '+(e.message||e)+'\n\n비밀번호나 방 연결은 📥 → 🔗 화면에서 확인해줘.'); }
   render();
+}
+// 일정에서 숙소 카드 빼기 (취소 확인용)
+async function extRemoveFromDay(ds, pid){
+  let rec = null;
+  if(ds===state.selectedDate && state.todayRecord) rec = state.todayRecord;
+  else { try{ const x = await window.storage.get('today:'+ds, false); if(x && x.value) rec = JSON.parse(x.value); }catch(e){} }
+  if(!rec || !(rec.propertyIds||[]).includes(pid)) return false;
+  rec.propertyIds = rec.propertyIds.filter(x=>x!==pid);
+  ['tasks','assign','dayNotes','dayPass','dayPassOut'].forEach(k=>{ if(rec[k]) delete rec[k][pid]; });
+  rec.priorityIds = (rec.priorityIds||[]).filter(x=>x!==pid);
+  if(rec===state.todayRecord){ state.openJobIds && state.openJobIds.delete(pid); await saveTodayRecord(); }
+  else await window.storage.set('today:'+ds, JSON.stringify(rec), false);
+  return true;
+}
+// 청소 취소 의심 목록: 한 건씩 확인하고 카드 지우기 (급한 것 먼저)
+async function openExtCancelSheet(list){
+  list = (list||[]).slice().sort((a,b)=> a.ds<b.ds?-1:1);
+  if(!list.length) return;
+  return new Promise(resolve=>{
+    const root = document.createElement('div'); root.className = 'overlay'; root.id = 'overlayCx';
+    const close = ()=>{ root.remove(); resolve(); };
+    root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>⚠️ 청소 취소 의심 ${list.length}건</h2>
+      <div class="sf-hint">우리 일정엔 카드가 있는데 <b>대표님 앱에는 청소가 없는 곳</b>이야. 대표님 앱에서 확인하고, 취소가 맞으면 카드를 지워줘. 배정된 직원이 있으면 꼭 따로 알려줘.</div>
+      ${list.map((x,i)=>`<div style="padding:10px 0;border-bottom:1px solid var(--paper-line);display:flex;gap:8px;align-items:center;">
+        <div style="flex:1;min-width:0;font-size:13.5px;line-height:1.5;"><b style="${x.urgent?'color:var(--clay);':''}">${x.urgent?'🚨 ':''}${esc(x.label)}</b>${x.urgent?' <span style="font-size:12px;color:var(--clay);">(오늘·내일)</span>':''}
+          <div style="font-size:12px;color:var(--ink-soft);">${x.hostCx?'대표님 앱 추가 일정에 \'청소 일정 취소\' 기록 있음':'대표님 앱 일정에 없음'}${x.worker?' · <b style="color:var(--clay);">배정: '+esc(x.worker)+'</b>':''}</div></div>
+        <button class="pill-btn" data-cx-del="${i}" style="flex-shrink:0;">카드 지우기</button></div>`).join('')}
+      <div class="sheet-actions"><a class="cancel-btn" href="${esc((state.extCfg&&state.extCfg.siteUrl)||'https://dexstreang.github.io/cleaning/')}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center;">대표님 앱 열기</a><button class="save-btn" id="cx_x">닫기</button></div></div>`;
+    document.body.appendChild(root);
+    root.onclick = (ev)=>{ if(ev.target===root) close(); };
+    root.querySelector('#cx_x').onclick = close;
+    root.querySelectorAll('[data-cx-del]').forEach(b=> b.onclick = async ()=>{
+      const x = list[+b.dataset.cxDel];
+      if(!confirm(x.label+' 카드를 일정에서 지울까?'+(x.worker?'\n\n배정된 '+x.worker+'님에게는 따로 알려줘.':''))) return;
+      b.disabled = true; b.textContent = '지우는 중…';
+      try{
+        const ok = await extRemoveFromDay(x.ds, x.id);
+        b.textContent = ok ? '지웠어 ✓' : '이미 없음'; b.style.color = 'var(--teal)';
+        if(state.extStatus){ state.extStatus.extra = (state.extStatus.extra||[]).filter(y=> !(y.ds===x.ds && y.id===x.id)); }
+        if(state.extCancelKeys) state.extCancelKeys.delete(x.ds+'|'+x.id);
+        try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
+        try{ render(); }catch(e){}
+      }catch(e){ b.disabled = false; b.textContent = '다시 시도'; miniToast('못 지웠어: '+(e.message||e), true); }
+    });
+  });
 }
 // 추가 일정 확인: 대표님 요청대로 사람이 내용을 읽고 한 건씩 눌러야만 대표님 앱에 '확인'이 감 (모두 확인·자동 확인 없음)
 async function openExtAckSheet(){
@@ -2851,7 +2904,8 @@ function chipsFor(rec, ds){
     const tasks = (rec.tasks||{})[id] || [];
     const done = Array.isArray((rec.tasks||{})[id]) && (tasks.length ? tasks.every(t=>t.done) : !!(ds && ds <= todayStr()));
     const wt = tasks.find(t=>t.text==='세탁 완료'); const wash = wt ? !!wt.done : null;
-    return { id, p, name:p.name, pri: pri.includes(id), done, wash, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
+    const cx = !!(ds && state.extCancelKeys && state.extCancelKeys.has(ds+'|'+id));
+    return { id, p, name:(cx?'⚠️취소? ':'')+p.name, cx, pri: pri.includes(id), done, wash, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
   }).filter(Boolean).sort((x,y)=> (y.pri-x.pri) || cmpByColor(x.p, y.p));
 }
 function washBtn(ds, c){
@@ -4360,6 +4414,7 @@ function render(){
     setupHistoryIfNeeded();
     view.querySelectorAll('[data-ext-open]').forEach(b=> b.onclick = extOpenFromBanner);
     view.querySelectorAll('[data-ext-ack]').forEach(b=> b.onclick = openExtAckSheet);
+    view.querySelectorAll('[data-ext-cx]').forEach(b=> b.onclick = ()=> openExtCancelSheet((state.extStatus||{}).extra||[]));
   } else if(state.tab === 'all'){
     fab.style.display=isAdmin()?'flex':'none';
     fab.style.alignItems='center';
@@ -4372,6 +4427,7 @@ function render(){
     attachCalHandlers();
     view.querySelectorAll('[data-ext-open]').forEach(b=> b.onclick = extOpenFromBanner);
     view.querySelectorAll('[data-ext-ack]').forEach(b=> b.onclick = openExtAckSheet);
+    view.querySelectorAll('[data-ext-cx]').forEach(b=> b.onclick = ()=> openExtCancelSheet((state.extStatus||{}).extra||[]));
   } else if(state.tab === 'staff'){
     fab.style.display='none';
     view.innerHTML = renderStaffTab();
@@ -6319,6 +6375,7 @@ async function startApp(){
   ensureLobbySplit();
   setTimeout(()=>extAutoCheck(false), 2500);
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') extAutoCheck(false); });
+  setInterval(()=>{ if(document.visibilityState==='visible') extAutoCheck(false); }, 60*1000); // 켜 둔 동안 10분마다
   undoAvailOffMode();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
   if(cloud && isAdmin() && state.properties.length === 0 && localStorage.getItem(KEY_PROPS)){
