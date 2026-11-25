@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-113';
+const APP_BUILD = '1102-114';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1749,6 +1749,7 @@ async function extFetch(cfg){
   }
   if(!resp || !resp.data) throw new Error((resp && resp.why) || '일정을 받지 못했어');
   if(!Array.isArray(resp.data.res)) throw new Error('대표님 앱이 바뀌어서 일정을 못 읽었어 (형식 변경)');
+  try{ const x = await window.storage.get('ext:acklog', false); state.extAckedIds = new Set(Object.keys(x && x.value ? (JSON.parse(x.value)||{}) : {})); }catch(e){}
   resp.data.changes = Array.isArray(resp.data.changes) ? resp.data.changes : [];
   resp.data.done = resp.data.done && typeof resp.data.done==='object' ? resp.data.done : {};
   // 혹시 받은 데이터에 비번이 있어도 메모리에서 바로 지움
@@ -1777,7 +1778,8 @@ function extCardDone(rec, pid){ const tk = ((rec||{}).tasks||{})[pid]; return Ar
 // 대표님 앱 '추가 일정' 중 아직 확인 안 한 것 (그 앱 업체 화면과 같은 기준)
 function extUnacked(resp){
   const t = (resp.now && resp.now.today) || todayStr();
-  return (resp.data.changes||[]).filter(c=> c && c.id && !c.ack && c.date>=t && (c.urgent || String(c.ts||'').slice(0,7)===String(c.date).slice(0,7)))
+  const done = state.extAckedIds || new Set(); // 우리 회사에서 이미 확인한 건 (대표님 앱은 기기마다 따로 세서, 다른 기기에선 '확인 전'으로 보임)
+  return (resp.data.changes||[]).filter(c=> c && c.id && !c.ack && !done.has(c.id) && c.date>=t && (c.urgent || String(c.ts||'').slice(0,7)===String(c.date).slice(0,7)))
     .sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:(String(a.ts)<String(b.ts)?-1:1));
 }
 // 청소 완료 맞추기: 우리 카드가 다 끝났으면 대표님 앱에도 ✅, 우리가 켰던 ✅를 우리 쪽에서 풀면 거기서도 풀기
@@ -2282,6 +2284,7 @@ async function openExtAckSheet(){
     try{
       await extAct(cfg, 'apiAck', [c.id]);
       b.textContent = '확인함 ✓'; b.style.color = 'var(--teal)';
+      (state.extAckedIds = state.extAckedIds || new Set()).add(c.id);
       try{ const x = await window.storage.get('ext:acklog', false); const lg = x && x.value ? JSON.parse(x.value) : {}; lg[c.id] = { by: me, at: Date.now(), date: c.date, room: c.room, kind: c.kind }; await window.storage.set('ext:acklog', JSON.stringify(lg), false); }catch(e){}
     }catch(e){ b.disabled = false; b.textContent = '다시 시도'; miniToast('확인을 못 보냈어: '+(e.message||e), true); }
   });
