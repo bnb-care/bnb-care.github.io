@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-99';
+const APP_BUILD = '1102-102';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1821,23 +1821,25 @@ function extTowels(room, g, n){ const cap = room==='와우산로'?30:25; let sma
 function extBuild(data, cfg, from, to, now){
   now = now || {}; const nToday = now.today || todayStr(); const nMin = typeof now.nowMin==='number' ? now.nowMin : (new Date().getHours()*60+new Date().getMinutes());
   const cutoffPassed = ds=>{ const d1 = extYmdAdd(ds, -1); return nToday > d1 || (nToday === d1 && nMin >= 900); };
-  const res = (data.res||[]).filter(r=> r.status==='확정' && /^\d{4}-\d\d-\d\d$/.test(r.checkin||'') && /^\d{4}-\d\d-\d\d$/.test(r.checkout||'') && r.checkout>r.checkin && Number(r.guests)>0);
+  const okYmd = v=>{ if(!/^\d{4}-\d\d-\d\d$/.test(String(v||''))) return false; const [y,m,d] = v.split('-').map(Number), t = new Date(Date.UTC(y,m-1,d)); return t.getUTCFullYear()===y && t.getUTCMonth()===m-1 && t.getUTCDate()===d; };
+  const res = (data.res||[]).filter(r=> r.status==='확정' && okYmd(r.checkin) && okYmd(r.checkout) && r.checkout>r.checkin && Number(r.guests)>0);
   const rooms = Object.keys(data.rooms||{}).length ? Object.keys(data.rooms) : [...new Set(res.map(r=>r.room))];
   const out = [];
   rooms.forEach(room=>{
-    const rs = res.filter(r=>r.room===room).sort((a,b)=> a.checkin<b.checkin?-1:1);
+    const rs = res.filter(r=>r.room===room).sort((a,b)=> a.checkin<b.checkin?-1:a.checkin>b.checkin?1:0); // 대표님 앱과 같은 정렬
     const prop = cfg.map && cfg.map[room] ? propById(cfg.map[room]) : null;
     for(let ds = from; ds <= to; ds = extYmdAdd(ds, 1)){
-      const co = rs.find(r=>r.checkout===ds), ci = rs.find(r=>r.checkin===ds), stay = rs.some(r=> r.checkin<ds && ds<r.checkout);
+      let co = null, ci = null, stay = false; // 대표님 앱 computeCell과 똑같이 (겹치는 예약이 있으면 마지막 것)
+      rs.forEach(r=>{ if(r.checkout===ds) co = r; if(r.checkin===ds) ci = r; if(r.checkin<ds && ds<r.checkout) stay = true; });
       // 그 앱 업체 화면과 같은 규칙: 체크아웃날 청소 / 빈 방에 새 손님이 오는 날은 전날 15시 전까지는 청소로 보여 줌
       if(!co && !(ci && !stay && !cutoffPassed(ds))) continue;
       const notes = (data.notes||[]).filter(x=>x.room===room && x.date===ds && x.text).map(x=>x.text);
-      let pri = false, txt;
+      let pri = false, txt; const tent = !co; // 빈 방 입실날: 전날 15시까지만 보이는 임시 일정 (앞 예약이 들어오면 진짜 당일 청소가 됨)
       if(ci && (co || (!stay && !cutoffPassed(ds)))){ const n = extDiff(ci.checkin, ci.checkout), g = Number(ci.guests), t = extTowels(room, g, n); pri = true; txt = ['당일 체크인', n+'박', '게스트 '+g+'명', '작은수건 '+t.small, '큰수건 '+t.big]; }
       else if(stay){ continue; }
       else { const nx = rs.find(r=>r.checkin>ds); txt = ['당일예약 없음']; if(nx){ const n = extDiff(nx.checkin, nx.checkout), g = Number(nx.guests), t = extTowels(room, g, n); txt.push('다음 '+(+nx.checkin.slice(5,7))+'/'+(+nx.checkin.slice(8))+' 체크인 '+n+'박 '+g+'명', '작은수건 '+t.small, '큰수건 '+t.big); } }
       notes.forEach(x=> txt.push(x));
-      out.push({ hdr: room, prop, ds, md: (+ds.slice(5,7))+'/'+(+ds.slice(8)), nights:'', guests:'', small:'', large:'', none:false, note: txt.join(' · '), pri, short:true, sched:true, pw:null, extRoom: room }); // 현관 비번은 대표님 요청으로 절대 가져오지 않음
+      out.push({ hdr: room, prop, ds, md: (+ds.slice(5,7))+'/'+(+ds.slice(8)), nights:'', guests:'', small:'', large:'', none:false, note: txt.join(' · '), pri, short:true, sched:true, pw:null, extRoom: room, tent }); // 현관 비번은 대표님 요청으로 절대 가져오지 않음
     }
   });
   return out.sort((a,b)=> a.ds<b.ds?-1:a.ds>b.ds?1:0);
@@ -1845,19 +1847,30 @@ function extBuild(data, cfg, from, to, now){
 // 불러온 예약 → (새로 넣을 일정, 우리 일정에만 있는 곳) 계산
 async function extDiffWithOurs(cfg, resp){
   const t0 = todayStr(), to = extYmdAdd(t0, (cfg.days||45)-1);
-  const entries = extBuild(resp.data, cfg, t0, to, resp.now).filter(e=>e.prop);
+  const all = extBuild(resp.data, cfg, t0, to, resp.now).filter(e=>e.prop);
+  const entries = all.filter(e=> !e.tent); // 임시(빈 방 입실) 일정은 넣지 않음 → 중복 청소 방지
   let recs = {}; try{ recs = await window.storage.recordsFrom(t0); }catch(e){}
+  const inOurs = e=> ((recs[e.ds]||{}).propertyIds||[]).includes(e.prop.id);
   const mapped = new Set(Object.values(cfg.map||{}).filter(Boolean)), has = new Set(entries.map(e=>e.ds+'|'+e.prop.id));
-  const fresh = entries.filter(e=> !((recs[e.ds]||{}).propertyIds||[]).includes(e.prop.id));
+  const fresh = entries.filter(e=> !inOurs(e));
+  // 우리 일정에 이미 있는 임시 일정 = 중복 청소일 수 있음
+  // 이미 카드가 있는데 대표님 앱은 당일 체크인인 곳 (우리 카드엔 당일 표시가 없음)
+  const isPri = e=> (((recs[e.ds]||{}).priorityIds)||[]).includes(e.prop.id);
+  const lab = e=> (+e.ds.slice(5,7))+'/'+(+e.ds.slice(8))+' '+e.prop.name;
+  const priMiss = entries.filter(e=> e.pri && inOurs(e) && !isPri(e)).map(e=> lab(e)+' → 대표님 앱은 당일 체크인인데 우리 카드엔 🔴 없음')
+    .concat(entries.filter(e=> !e.pri && inOurs(e) && isPri(e) && !e.prop.alwaysPriority).map(e=> lab(e)+' → 우리 카드는 🔴 당일인데 대표님 앱은 당일예약 없음'));
+  const tentOurs = all.filter(e=> e.tent && inOurs(e)).map(e=>({ ds:e.ds, id:e.prop.id, label:(+e.ds.slice(5,7))+'/'+(+e.ds.slice(8))+' '+e.prop.name }));
   const extra = [];
   Object.keys(recs).sort().forEach(ds=>{ if(ds<t0 || ds>to) return; ((recs[ds]||{}).propertyIds||[]).forEach(id=>{ if(mapped.has(id) && !has.has(ds+'|'+id)){ const p = propById(id); extra.push({ ds, id, label:(+ds.slice(5,7))+'/'+(+ds.slice(8))+' '+(p?p.name:id) }); } }); });
-  return { entries, fresh, extra };
+  return { entries, fresh, extra, tentOurs, priMiss };
 }
 async function extShowPreview(cfg, resp){
   const d = await extDiffWithOurs(cfg, resp);
-  if(!d.entries.length && !d.extra.length){ alert('불러올 청소 일정이 없어.'); return; }
-  if(d.extra.length) alert('대표님 앱에는 청소가 없는데 우리 일정에만 있는 곳이 있어. 취소됐을 수 있으니 확인해줘:\n\n'+d.extra.map(x=>x.label).join('\n'));
-  if(d.entries.length) openPastePreview([], d.entries, '', []);
+  if(!d.fresh.length && !d.extra.length && !d.priMiss.length){ alert('새로 넣을 일정이 없어. 우리 일정과 같아 ✓'); }
+  if(d.extra.length) alert('대표님 앱에는 청소가 없는데 우리 일정에만 있는 곳이 있어. 취소됐거나 중복일 수 있으니 확인해줘:\n\n'+d.extra.map(x=>x.label).join('\n')+(d.tentOurs.length?'\n\n(이 중 '+d.tentOurs.map(x=>x.label).join(', ')+'은 빈 방에 손님이 들어오는 날이야. 앞 퇴실날 청소했으면 빼도 돼)':''));
+  if(d.priMiss.length) alert('당일 체크인 표시(🔴)가 대표님 앱과 다른 곳이야. 확인해줘:\n\n'+d.priMiss.join('\n'));
+  // 이미 카드가 있는 날은 건드리지 않음 (특이사항 중복 방지) → 새 카드만 미리보기
+  if(d.fresh.length) openPastePreview([], d.fresh, '', []);
   state.extResp = resp;
   state.extStatus = { at: Date.now(), newN: d.fresh.length, extra: d.extra, err:'', ackN: extUnacked(resp).length, doneFail:0 };
   try{ localStorage.setItem('ext:last', String(Date.now())); }catch(e){}
