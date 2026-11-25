@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-108';
+const APP_BUILD = '1102-109';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1829,6 +1829,7 @@ function extApplyHostToCard(rec, pid, hs){
   if(k==='clean' || k==='tent'){ if(hs.n!=null) put(/\d+\s*박/, hs.n+'박'); if(hs.g!=null) put(/게스트\s*\d+\s*명/, '게스트 '+hs.g+'명'); }
   if(hs.small!=null) put(/\[?작은\s*수건\]?\s*[:：]?\s*\d+/, '작은수건 '+hs.small);
   if(hs.big!=null) put(/\[?큰\s*수건\]?\s*[:：]?\s*\d+/, '큰수건 '+hs.big);
+  if(k==='nosame'){ if(hs.next) put(/다음\s*\d+\/\d+\s*체크인[^·]*/, hs.next); if(!/당일\s*예약/.test(note)) note = '당일예약 없음 · '+note; }
   if(k==='clean' && !/당일\s*체크인/.test(note)) note = '당일 체크인 · '+note;
   if(k==='tent' && !extIsTentNote(note)) note = EXT_TENT+' · '+note+' · '+EXT_TENT_TAIL;
   rec.dayNotes[pid] = note.replace(/(\s*·\s*)+/g,' · ').replace(/^\s*·\s*|\s*·\s*$/g,'').trim();
@@ -1858,7 +1859,7 @@ function extBuild(data, cfg, from, to, now){
         if(tent){ pri = false; txt = [EXT_TENT, '빈 방 입실 '+n+'박', '게스트 '+g+'명', '작은수건 '+t.small, '큰수건 '+t.big, EXT_TENT_TAIL]; hs = { k:'tent', n, g, small:t.small, big:t.big }; }
         else { pri = true; txt = ['당일 체크인', n+'박', '게스트 '+g+'명', '작은수건 '+t.small, '큰수건 '+t.big]; hs = { k:'clean', n, g, small:t.small, big:t.big }; } }
       else if(stay){ continue; }
-      else { const nx = rs.find(r=>r.checkin>ds); txt = ['당일예약 없음']; hs = { k:'nosame', small:null, big:null }; if(nx){ const n = extDiff(nx.checkin, nx.checkout), g = Number(nx.guests), t = extTowels(room, g, n); txt.push('다음 '+(+nx.checkin.slice(5,7))+'/'+(+nx.checkin.slice(8))+' 체크인 '+n+'박 '+g+'명', '작은수건 '+t.small, '큰수건 '+t.big); hs.small = t.small; hs.big = t.big; } }
+      else { const nx = rs.find(r=>r.checkin>ds); txt = ['당일예약 없음']; hs = { k:'nosame', small:null, big:null }; if(nx){ const n = extDiff(nx.checkin, nx.checkout), g = Number(nx.guests), t = extTowels(room, g, n); hs.next = '다음 '+(+nx.checkin.slice(5,7))+'/'+(+nx.checkin.slice(8))+' 체크인 '+n+'박 '+g+'명'; txt.push(hs.next, '작은수건 '+t.small, '큰수건 '+t.big); hs.small = t.small; hs.big = t.big; } }
       notes.forEach(x=> txt.push(x));
       out.push({ hdr: room, prop, ds, md: (+ds.slice(5,7))+'/'+(+ds.slice(8)), nights:'', guests:'', small:'', large:'', none:false, note: txt.join(' · '), pri, short:true, sched:true, pw:null, extRoom: room, tent, hs }); // 현관 비번은 대표님 요청으로 절대 가져오지 않음
     }
@@ -1883,8 +1884,9 @@ async function extDiffWithOurs(cfg, resp){
   // 우리 카드는 ⏳ 임시인데 대표님 앱에서 확정(당일 체크인)된 곳
   const confirmed = entries.filter(e=> !e.tent && inOurs(e) && extIsTentNote(noteOf(e))).map(e=>({ ds:e.ds, id:e.prop.id, hs:e.hs, label:lab(e) }));
   const confSet = new Set(confirmed.map(x=>x.ds+'|'+x.id));
-  const priMiss = entries.filter(e=> e.pri && inOurs(e) && !isPri(e) && !e.prop.alwaysPriority && !confSet.has(e.ds+'|'+e.prop.id)).map(e=> lab(e)+' → 대표님 앱은 당일 체크인인데 우리 카드엔 🔴 없음')
-    .concat(entries.filter(e=> !e.pri && inOurs(e) && isPri(e) && !e.prop.alwaysPriority).map(e=> lab(e)+(e.tent?' → 우리 카드는 🔴 당일인데 대표님 앱은 ⏳ 임시 청소(빈 방 입실)':' → 우리 카드는 🔴 당일인데 대표님 앱은 당일예약 없음')));
+  const pm = (e, msg)=>({ ds:e.ds, id:e.prop.id, hs:e.hs, label:lab(e), msg: lab(e)+msg });
+  const priMiss = entries.filter(e=> e.pri && inOurs(e) && !isPri(e) && !e.prop.alwaysPriority && !confSet.has(e.ds+'|'+e.prop.id)).map(e=> pm(e,' → 대표님 앱은 당일 체크인인데 우리 카드엔 🔴 없음'))
+    .concat(entries.filter(e=> !e.pri && inOurs(e) && isPri(e) && !e.prop.alwaysPriority).map(e=> pm(e, e.tent?' → 우리 카드는 🔴인데 대표님 앱은 ⏳ 임시 청소(빈 방 입실)':' → 우리 카드는 🔴인데 대표님 앱은 당일예약 없음')));
   const extra = [];
   const t1 = extYmdAdd(t0, 1);
   Object.keys(recs).sort().forEach(ds=>{ if(ds<t0 || ds>to) return; ((recs[ds]||{}).propertyIds||[]).forEach(id=>{ if(mapped.has(id) && !has.has(ds+'|'+id)){ const p = propById(id), room = extRoomOf(cfg, id);
@@ -1909,7 +1911,17 @@ async function extShowPreview(cfg, resp){
     try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
   }
   if(false) alert('⏳ 대표님 앱에 \'임시\'로 떠 있는 청소야 (빈 방에 손님이 들어오는 날):\n\n'+d.tentOurs.map(x=>x.label).join('\n')+'\n\n전날 오후 3시까지 앞 예약이 들어오면 당일 청소로 확정되고, 안 들어오면 대표님 앱에서도 사라져. 카드는 그대로 두고, 전날 3시 뒤에 배너에 \'취소 의심\'으로 뜨면 그때 지워줘.');
-  if(d.priMiss.length) alert('당일 체크인 표시(🔴)가 대표님 앱과 다른 곳이야. 확인해줘:\n\n'+d.priMiss.join('\n'));
+  if(d.priMiss.length && confirm('당일 체크인 표시(🔴)가 대표님 앱과 다른 곳이야:\n\n'+d.priMiss.map(x=>x.msg).join('\n')+'\n\n[확인]을 누르면 대표님 앱대로 고쳐 (🔴, 당일/당일예약없음/⏳임시 문구, 박수·인원·수건). 직원 배정과 다른 메모는 그대로야.')){
+    let ok = 0;
+    for(const x of d.priMiss){ try{
+      const self = x.ds===state.selectedDate && state.todayRecord; let rec = self ? state.todayRecord : null;
+      if(!rec){ const y = await window.storage.get('today:'+x.ds, false); rec = y && y.value ? JSON.parse(y.value) : null; }
+      if(!rec) continue; extApplyHostToCard(rec, x.id, x.hs);
+      if(self) await saveTodayRecord(); else await window.storage.set('today:'+x.ds, JSON.stringify(rec), false); ok++;
+    }catch(e){} }
+    alert(ok+'곳을 대표님 앱대로 고쳤어.'+(ok<d.priMiss.length?'\n못 고친 곳이 있어. 다시 불러오기 해줘.':''));
+    try{ if(state.selectedDate) await loadTodayRecord(); if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
+  }
   // 이미 카드가 있는 날은 건드리지 않음 (특이사항 중복 방지) → 새 카드만 미리보기
   if(d.fresh.length) openPastePreview([], d.fresh, '', []);
   state.extResp = resp;
