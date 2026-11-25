@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-104';
+const APP_BUILD = '1102-106';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1981,6 +1981,7 @@ async function openExtAckSheet(){
   root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
   let resp; try{ resp = await extFetch(cfg); }catch(e){ root.innerHTML = `<div class="sheet"><h2>못 불러왔어</h2><div class="sf-hint">${esc(e.message||e)}</div><div class="sheet-actions"><button class="cancel-btn" id="ea_x">닫기</button></div></div>`; root.querySelector('#ea_x').onclick=()=>root.remove(); return; }
   const list = extUnacked(resp);
+  const tentKeys = new Set(extBuild(resp.data, cfg, (resp.now&&resp.now.today)||todayStr(), extYmdAdd((resp.now&&resp.now.today)||todayStr(), 62), resp.now).filter(e=>e.tent).map(e=>e.ds+'|'+e.extRoom));
   let recs = {}; try{ recs = await window.storage.recordsFrom((resp.now&&resp.now.today)||todayStr()); }catch(e){}
   const me = (cloud && cloud.user && cloud.user.email) ? cloud.user.email.split('@')[0] : '나';
   const row = (c, i)=>{
@@ -1988,7 +1989,25 @@ async function openExtAckSheet(){
     const has = p && ((recs[c.date]||{}).propertyIds||[]).includes(pid);
     const ok = c.kind==='취소' ? !has : has;
     const md = (+String(c.date).slice(5,7))+'/'+(+String(c.date).slice(8));
-    const ref = !p ? '<span style="color:var(--ink-soft);">우리 숙소 연결 안 됨</span>' : ok ? '<span style="color:var(--teal);">우리 일정에 반영됨 ✓</span>' : `<span style="color:var(--clay);">우리 일정에 ${c.kind==='취소'?'아직 카드가 남아 있어':'아직 카드가 없어'}</span>`;
+    // 카드만 있는지가 아니라 당일 표시·수건 수까지 비교 (대표님 앱 내용 c.cell 기준)
+    let ref;
+    const tentHit = c.kind!=='취소' && !has && tentKeys.has(c.date+'|'+c.room);
+    if(!p) ref = '<span style="color:var(--ink-soft);">우리 숙소 연결 안 됨</span>';
+    else if(tentHit) ref = '<span style="color:var(--ink-soft);">⏳ 임시 청소라 우리 일정엔 안 넣었어 (전날 15시까지 앞 예약 없으면 사라짐)</span>';
+    else if(!ok) ref = `<span style="color:var(--clay);">우리 일정에 ${c.kind==='취소'?'아직 카드가 남아 있어':'아직 카드가 없어'}</span>`;
+    else if(c.kind==='취소') ref = '<span style="color:var(--teal);">우리 일정에도 카드 없음 ✓</span>';
+    else {
+      const rec = recs[c.date]||{}, note = String((rec.dayNotes||{})[pid]||''), ourPri = (rec.priorityIds||[]).includes(pid);
+      const cell = c.cell || {}, hostPri = cell.k==='clean';
+      const num = (re)=>{ const m = note.match(re); return m ? Number(m[1]) : null; };
+      const oS = num(/작은\s*수건\s*(\d+)/), oB = num(/큰\s*수건\s*(\d+)/);
+      const bad = [];
+      if(cell.k && hostPri!==ourPri && !(p.alwaysPriority && hostPri)) bad.push(hostPri ? '🔴 당일 표시가 없어' : '우리는 🔴 당일인데 대표님 앱은 당일예약x');
+      if(cell.small!=null && oS!=null && oS!==Number(cell.small)) bad.push('작은수건 우리 '+oS+' → '+cell.small);
+      if(cell.big!=null && oB!=null && oB!==Number(cell.big)) bad.push('큰수건 우리 '+oB+' → '+cell.big);
+      if(cell.small!=null && oS==null) bad.push('우리 특이사항에 수건 수가 없어');
+      ref = `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:2px;">우리 카드${ourPri?' 🔴':''}: ${esc(note||'(특이사항 없음)')}</div>` + (bad.length ? `<span style="color:var(--clay);font-weight:700;">⚠️ ${esc(bad.join(' · '))}</span><div style="margin-top:4px;"><button class="pill-btn" data-ea-fix="${i}" style="font-size:12px;padding:4px 10px;">우리 카드 고치기</button></div>` : '<span style="color:var(--teal);">당일 표시·수건 수까지 같아 ✓</span>');
+    }
     return `<div data-ea-row="${i}" style="padding:10px 0;border-bottom:1px solid var(--paper-line);">
       <div style="font-size:13.5px;"><b>${md}</b> ${esc(p?p.name:c.room)} <span class="tag" style="${c.kind==='취소'?'color:var(--clay);border-color:var(--clay);':''}">${esc(c.kind||'')}</span>${c.urgent?' <span class="tag" style="color:var(--clay);border-color:var(--clay);">급함</span>':''}</div>
       ${c.kind==='변경' && c.before ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:3px;text-decoration:line-through;">${esc(c.before)}</div>` : ''}
@@ -2001,6 +2020,37 @@ async function openExtAckSheet(){
     <div class="sheet-actions"><button class="cancel-btn" id="ea_x">닫기</button>${list.length?'<button class="save-btn" id="ea_load">일정 불러오기</button>':''}</div></div>`;
   root.querySelector('#ea_x').onclick = ()=>{ root.remove(); extAutoCheck(true); };
   const ld = root.querySelector('#ea_load'); if(ld) ld.onclick = async ()=>{ root.remove(); try{ await extShowPreview(cfg, resp); }catch(e){ alert('못 불러왔어: '+(e.message||e)); } };
+  // 우리 카드를 대표님 앱 내용대로: 🔴 당일 표시, 당일/당일예약없음 문구, 수건 수 (다른 메모는 그대로 둠)
+  root.querySelectorAll('[data-ea-fix]').forEach(b=> b.onclick = async ()=>{
+    const c = list[+b.dataset.eaFix], pid = (cfg.map||{})[c.room], cell = c.cell||{};
+    if(!pid || !cell.k) return;
+    b.disabled = true; b.textContent = '고치는 중…';
+    try{
+      const self = c.date===state.selectedDate && state.todayRecord;
+      let rec = self ? state.todayRecord : null;
+      if(!rec){ const x = await window.storage.get('today:'+c.date, false); rec = x && x.value ? JSON.parse(x.value) : null; }
+      if(!rec || !(rec.propertyIds||[]).includes(pid)) throw new Error('카드가 없어');
+      rec.dayNotes = rec.dayNotes||{}; rec.priorityIds = rec.priorityIds||[];
+      let note = String(rec.dayNotes[pid]||'');
+      const hostPri = cell.k==='clean';
+      if(hostPri){ note = note.replace(/당일\s*예약\s*(없음|x|X)/g, '당일 체크인'); if(!rec.priorityIds.includes(pid)) rec.priorityIds.push(pid); }
+      else { note = note.replace(/당일\s*체크인/g, '당일예약 없음'); if(!propById(pid)?.alwaysPriority) rec.priorityIds = rec.priorityIds.filter(x=>x!==pid); }
+      const setNum = (re, label, v)=>{ if(v==null) return; if(re.test(note)) note = note.replace(re, label+' '+v); else note = [note, label+' '+v].filter(Boolean).join(' · '); };
+      if(hostPri){
+        if(cell.n!=null){ if(/\d+\s*박/.test(note)) note = note.replace(/\d+\s*박/, cell.n+'박'); else note = [note, cell.n+'박'].filter(Boolean).join(' · '); }
+        if(cell.g!=null){ if(/게스트\s*\d+\s*명/.test(note)) note = note.replace(/게스트\s*\d+\s*명/, '게스트 '+cell.g+'명'); else note = [note, '게스트 '+cell.g+'명'].filter(Boolean).join(' · '); }
+      }
+      setNum(/작은\s*수건\s*\d+/, '작은수건', cell.small);
+      setNum(/큰\s*수건\s*\d+/, '큰수건', cell.big);
+      if(hostPri && !/당일\s*체크인/.test(note)) note = ['당일 체크인', note].filter(Boolean).join(' · ');
+      rec.dayNotes[pid] = note;
+      if(self) await saveTodayRecord(); else await window.storage.set('today:'+c.date, JSON.stringify(rec), false);
+      recs[c.date] = rec;
+      b.textContent = '고쳤어 ✓'; b.style.color = 'var(--teal)';
+      const box = b.closest('[data-ea-row]'); if(box){ const m = box.querySelector('div[style*="margin-bottom:2px"]'); if(m) m.textContent = '우리 카드'+(rec.priorityIds.includes(pid)?' 🔴':'')+': '+note; }
+      try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
+    }catch(e){ b.disabled = false; b.textContent = '다시 시도'; miniToast('못 고쳤어: '+(e.message||e), true); }
+  });
   root.querySelectorAll('[data-ea-ack]').forEach(b=> b.onclick = async ()=>{
     const c = list[+b.dataset.eaAck]; b.disabled = true; b.textContent = '보내는 중…';
     try{
