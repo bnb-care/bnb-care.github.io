@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-109';
+const APP_BUILD = '1102-111';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -1947,6 +1947,183 @@ async function extAutoCheck(force){
   }catch(e){ state.extStatus = { at: Date.now(), newN:0, extra:[], err: String(e && e.message || e), ackN:0, doneFail:0 }; }
   finally{ state._extBusy = false; if(state.tab==='today' || state.tab==='cal') render(); }
 }
+// ===== 에어비앤비(등) 달력 링크 연동 =====
+// 설정 kv 'ical:cfg' { proxy: Apps Script 주소, key: 비밀 키, links: { 숙소id: [링크...] }, days }
+// 예약 날짜만 읽음 (게스트 연락처 등은 Apps Script에서 버리고 날짜·제목만 받음)
+const ICAL_KEY = 'ical:cfg';
+async function icalLoadCfg(){
+  try{ const x = await window.storage.get(ICAL_KEY, false); if(x && x.value){ const c = JSON.parse(x.value); c.links = c.links||{}; return c; } }catch(e){}
+  return { proxy:'', key:'', links:{}, days:60 };
+}
+async function icalSaveCfg(cfg){ state.icalCfg = cfg; await window.storage.set(ICAL_KEY, JSON.stringify(cfg), false); }
+const icalLinked = cfg=> Object.keys(cfg.links||{}).filter(pid=> (cfg.links[pid]||[]).length && propById(pid));
+const icalYmd = s=> String(s||'').replace(/[^0-9]/g,'').slice(0,8).replace(/^(\d{4})(\d\d)(\d\d)$/, '$1-$2-$3');
+const icalIsAirbnb = u=> /airbnb\./i.test(u);
+async function icalFetch(cfg){
+  const urls = []; icalLinked(cfg).forEach(pid=> cfg.links[pid].forEach(u=>{ if(!urls.includes(u)) urls.push(u); }));
+  if(!urls.length) return {};
+  const r = await fetch(cfg.proxy, { method:'POST', credentials:'omit', redirect:'follow', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ key: cfg.key, urls }) });
+  const j = await r.json();
+  if(!j || !j.ok) throw new Error(j && j.why==='key' ? '달력 서버 키가 맞지 않아' : '달력 서버에서 못 받았어');
+  const out = {}; (j.results||[]).forEach(x=>{ out[x.url] = x; });
+  return out;
+}
+// 숙소별 예약 목록 (에어비앤비는 'Reserved'만, 막아둔 날 제외 / 다른 사이트는 구분이 안 돼서 '확인 필요')
+function icalReservations(cfg, fetched, pid){
+  const list = [], bad = [];
+  (cfg.links[pid]||[]).forEach(u=>{
+    const f = fetched[u];
+    if(!f || !f.ok){ bad.push(u); return; }
+    (f.events||[]).forEach(ev=>{
+      const s = icalYmd(ev.s), e = icalYmd(ev.e); if(!s || !e || e<=s) return;
+      const sum = String(ev.sum||'');
+      if(icalIsAirbnb(u)){ if(/not available|blocked/i.test(sum) && !/reserved/i.test(sum)) return; }
+      list.push({ s, e, uc: !icalIsAirbnb(u), src: icalIsAirbnb(u) ? '에어비앤비' : (/booking\.com/i.test(u) ? '부킹닷컴' : '다른 사이트') });
+    });
+  });
+  // 같은 날짜 예약이 여러 링크에 있으면 하나로 (에어비앤비 우선)
+  const seen = {}; const uniq = [];
+  list.sort((a,b)=> a.s<b.s?-1:a.s>b.s?1:(a.uc?1:-1)).forEach(r=>{ const k = r.s+'|'+r.e; if(seen[k]) return; seen[k] = 1; uniq.push(r); });
+  return { list: uniq, bad };
+}
+function icalTowels(p){ const s = Number(p.towelS), b = Number(p.towelB); return { small: p.towelS!=null && p.towelS!=='' && !isNaN(s) ? s : null, big: p.towelB!=null && p.towelB!=='' && !isNaN(b) ? b : null }; }
+function icalBuild(cfg, fetched, from, to){
+  const out = [], failed = [];
+  icalLinked(cfg).forEach(pid=>{
+    const p = propById(pid); const { list, bad } = icalReservations(cfg, fetched, pid);
+    if(bad.length){ failed.push(p.name); return; } // 링크 하나라도 못 읽으면 그 숙소는 건너뜀 (잘못된 취소 의심 방지)
+    const tw = icalTowels(p);
+    list.forEach(r=>{
+      const ds = r.e; if(ds<from || ds>to) return;
+      const same = list.find(x=> x.s===ds);
+      const nx = same || list.filter(x=> x.s>ds).sort((a,b)=> a.s<b.s?-1:1)[0];
+      const n = nx ? extDiff(nx.s, nx.e) : null;
+      let txt, hs, pri = !!same;
+      if(same){ txt = ['당일 체크인', n+'박']; hs = { k:'clean', n, g:null, small:tw.small, big:tw.big }; }
+      else { txt = ['당일예약 없음']; hs = { k:'nosame', small:tw.small, big:tw.big }; if(nx){ hs.next = '다음 '+(+nx.s.slice(5,7))+'/'+(+nx.s.slice(8))+' 체크인 '+n+'박'; txt.push(hs.next); } }
+      if(tw.small!=null) txt.push('작은수건 '+tw.small);
+      if(tw.big!=null) txt.push('큰수건 '+tw.big);
+      if(r.uc || (same && same.uc)) txt.push('('+(r.uc?r.src:same.src)+' 달력 · 실제 예약인지 확인)');
+      out.push({ hdr: p.name, prop: p, ds, md:(+ds.slice(5,7))+'/'+(+ds.slice(8)), nights:'', guests:'', small:'', large:'', none:false, note: txt.join(' · '), pri, short:true, sched:true, pw:null, ical:true, hs });
+    });
+  });
+  // 같은 숙소·같은 날 중복 제거
+  const seen = {}; return { entries: out.filter(e=>{ const k = e.ds+'|'+e.prop.id; if(seen[k]) return false; seen[k] = 1; return true; }), failed };
+}
+async function icalDiff(cfg, fetched){
+  const t0 = todayStr(), to = extYmdAdd(t0, (cfg.days||60)-1), t1 = extYmdAdd(t0, 1);
+  const { entries, failed } = icalBuild(cfg, fetched, t0, to);
+  let recs = {}; try{ recs = await window.storage.recordsFrom(t0); }catch(e){}
+  const inOurs = e=> ((recs[e.ds]||{}).propertyIds||[]).includes(e.prop.id);
+  const isPri = e=> (((recs[e.ds]||{}).priorityIds)||[]).includes(e.prop.id);
+  const lab = e=> e.md+' '+e.prop.name;
+  const fresh = entries.filter(e=> !inOurs(e));
+  const pm = (e, msg)=>({ ds:e.ds, id:e.prop.id, hs:e.hs, label:lab(e), msg: lab(e)+msg });
+  const priMiss = entries.filter(e=> e.pri && inOurs(e) && !isPri(e) && !e.prop.alwaysPriority).map(e=> pm(e,' → 달력은 당일 체크인인데 우리 카드엔 🔴 없음'))
+    .concat(entries.filter(e=> !e.pri && inOurs(e) && isPri(e) && !e.prop.alwaysPriority).map(e=> pm(e,' → 우리 카드는 🔴인데 달력은 당일예약 없음')));
+  const okPids = new Set(icalLinked(cfg).filter(pid=> !failed.includes((propById(pid)||{}).name)));
+  const has = new Set(entries.map(e=> e.ds+'|'+e.prop.id)), extra = [];
+  Object.keys(recs).sort().forEach(ds=>{ if(ds<t0 || ds>to) return; ((recs[ds]||{}).propertyIds||[]).forEach(id=>{ if(okPids.has(id) && !has.has(ds+'|'+id)){ const p = propById(id);
+    extra.push({ ds, id, urgent: ds<=t1, worker: (staffById(((recs[ds]||{}).assign||{})[id])||{}).name || '', label:(+ds.slice(5,7))+'/'+(+ds.slice(8))+' '+(p?p.name:id), src:'ical' }); } }); });
+  return { entries, fresh, priMiss, extra, failed };
+}
+async function icalFixCards(list){
+  let ok = 0;
+  for(const x of list){ try{
+    const self = x.ds===state.selectedDate && state.todayRecord; let rec = self ? state.todayRecord : null;
+    if(!rec){ const y = await window.storage.get('today:'+x.ds, false); rec = y && y.value ? JSON.parse(y.value) : null; }
+    if(!rec) continue; extApplyHostToCard(rec, x.id, x.hs);
+    if(self) await saveTodayRecord(); else await window.storage.set('today:'+x.ds, JSON.stringify(rec), false); ok++;
+  }catch(e){} }
+  try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
+  return ok;
+}
+async function icalShowPreview(cfg, fetched){
+  const d = await icalDiff(cfg, fetched);
+  if(d.failed.length) alert('📅 이 숙소 달력은 못 읽었어 (링크 확인 필요):\n\n'+d.failed.join('\n')+'\n\n이 숙소들은 이번엔 건너뛰었어.');
+  if(!d.fresh.length && !d.extra.length && !d.priMiss.length){ alert('📅 달력과 우리 일정이 같아 ✓'); }
+  if(d.extra.length) await openExtCancelSheet(d.extra, { who:'에어비앤비 달력' });
+  if(d.priMiss.length && confirm('당일 체크인 표시(🔴)가 달력과 다른 곳이야:\n\n'+d.priMiss.map(x=>x.msg).join('\n')+'\n\n[확인]을 누르면 달력대로 고쳐 (🔴, 당일/당일예약없음 문구, 박수). 직원 배정과 다른 메모는 그대로야.')){
+    const ok = await icalFixCards(d.priMiss); alert(ok+'곳을 달력대로 고쳤어.');
+  }
+  if(d.fresh.length) openPastePreview([], d.fresh, '', []);
+}
+async function icalAutoCheck(force){
+  try{
+    if(!(isAdmin && isAdmin())) return;
+    if(state._icalBusy) return;
+    const cfg = state.icalCfg || (state.icalCfg = await icalLoadCfg());
+    if(!cfg.proxy || !icalLinked(cfg).length) return;
+    if(!extCanAck(state.extCfg)) return; // 대표님 앱 연동 담당자와 같은 사람만
+    let last = 0; try{ last = Number(localStorage.getItem('ical:last')||0); }catch(e){}
+    if(!force && Date.now()-last < 30*60*1000 && state.icalStatus) return;
+    state._icalBusy = true;
+    const fetched = await icalFetch(cfg);
+    const d = await icalDiff(cfg, fetched);
+    state.icalCancelKeys = new Set(d.extra.map(x=>x.ds+'|'+x.id));
+    state.icalStatus = { at: Date.now(), newN: d.fresh.length, priN: d.priMiss.length, extra: d.extra, failed: d.failed, err:'' };
+    try{ localStorage.setItem('ical:last', String(Date.now())); }catch(e){}
+  }catch(e){ state.icalStatus = { at: Date.now(), newN:0, priN:0, extra:[], failed:[], err: String(e && e.message || e) }; }
+  finally{ state._icalBusy = false; if(state.tab==='today' || state.tab==='cal') render(); }
+}
+function icalBannerHtml(){
+  const cfg = state.icalCfg;
+  if(!isAdmin() || !cfg || !cfg.proxy || !icalLinked(cfg).length || !extCanAck(state.extCfg)) return '';
+  const st = state.icalStatus;
+  const when = st ? new Date(st.at).toTimeString().slice(0,5) : '';
+  const bits = !st ? '<span style="color:var(--ink-soft);">확인 중…</span>'
+    : st.err ? '<b style="color:var(--clay);">못 불러왔어</b> <span style="font-size:12px;color:var(--ink-soft);">('+esc(st.err)+')</span>'
+    : (st.newN || st.extra.length || st.priN || st.failed.length) ? [st.newN?'<b style="color:var(--teal);">새 일정 '+st.newN+'건</b>':'', st.extra.length?'<b style="color:var(--clay);">취소 의심 '+st.extra.length+'건</b>':'', st.priN?'<b style="color:var(--clay);">🔴 다른 곳 '+st.priN+'건</b>':'', st.failed.length?'<b style="color:var(--clay);">못 읽은 달력 '+st.failed.length+'곳</b>':''].filter(Boolean).join(' · ')
+    : '<span style="color:var(--ink-soft);">바뀐 것 없음 ✓</span>';
+  const hot = st && !st.err && (st.newN || st.extra.length || st.priN);
+  const cxList = st && !st.err && st.extra.length ? `<div style="margin-top:6px;padding:6px 8px;border-radius:8px;background:#fdecea;font-size:12.5px;line-height:1.5;">⚠️ <b>청소 취소 의심</b> — 달력에는 퇴실이 없어<br>${st.extra.slice(0,6).map(x=>`<span style="${x.urgent?'color:var(--clay);font-weight:700;':''}">${x.urgent?'🚨 ':''}${esc(x.label)}${x.worker?' · 배정 '+esc(x.worker):''}</span>`).join('<br>')}${st.extra.length>6?'<br>외 '+(st.extra.length-6)+'건':''}</div>` : '';
+  return `<div class="prop-card open" style="margin-bottom:10px;${st && !st.err && st.extra.length ? 'border-color:var(--clay);border-width:2px;' : hot?'border-color:var(--teal);':''}"><div style="display:flex;align-items:center;gap:8px;padding:10px 12px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:0;font-size:13px;line-height:1.45;">📅 <b>에어비앤비 달력</b> <span style="font-size:12px;color:var(--ink-soft);">${icalLinked(cfg).length}곳</span><br>${bits}${when?` <span style="color:var(--ink-soft);font-size:11.5px;">· ${when} 확인</span>`:''}</div>
+    ${st && !st.err && st.extra.length ? '<button class="pill-btn" data-ical-cx="1" style="flex-shrink:0;background:var(--clay);color:#fff;border-color:var(--clay);">취소 확인</button>' : ''}
+    <button class="pill-btn" data-ical-open="1" style="flex-shrink:0;${hot?'background:var(--teal);color:#fff;border-color:var(--teal);':''}">${hot?'확인하기':'불러오기'}</button>
+  </div>${cxList?'<div style="padding:0 12px 10px;">'+cxList+'</div>':''}</div>`;
+}
+async function icalOpenFromBanner(){
+  const cfg = state.icalCfg || await icalLoadCfg();
+  try{ miniToast('📅 달력 읽는 중…'); const fetched = await icalFetch(cfg); await icalShowPreview(cfg, fetched); localStorage.setItem('ical:last','0'); icalAutoCheck(true); }
+  catch(e){ alert('달력을 못 불러왔어: '+(e.message||e)); }
+}
+function icalBindBanner(view){
+  view.querySelectorAll('[data-ical-open]').forEach(b=> b.onclick = icalOpenFromBanner);
+  view.querySelectorAll('[data-ical-cx]').forEach(b=> b.onclick = ()=> openExtCancelSheet((state.icalStatus||{}).extra||[], { who:'에어비앤비 달력' }));
+}
+// 달력 서버(Apps Script) 설정 화면
+async function openIcalSheet(){
+  if(!isAdmin()) return;
+  if(!extCanAck(state.extCfg)){ alert('일정 연동은 '+state.extCfg.ackOwner+' 담당이야.'); return; }
+  const cfg = await icalLoadCfg();
+  const linked = icalLinked(cfg);
+  const root = document.createElement('div'); root.className = 'overlay'; root.id = 'overlay2';
+  root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>📅 에어비앤비 달력 연결</h2>
+    <div class="sf-hint">숙소마다 받은 '달력 내보내기' 링크는 <b>숙소 탭 → 숙소 수정 → 달력 링크</b> 칸에 넣어줘. 여기서는 링크를 대신 읽어주는 서버만 한 번 설정해.</div>
+    <div class="field"><label>달력 서버 주소 (Apps Script 웹 앱 URL)</label><input id="ic_proxy" value="${esc(cfg.proxy||'')}" placeholder="https://script.google.com/macros/s/…/exec"></div>
+    <div class="field"><label>서버 키 (Apps Script 코드의 KEY와 같게)</label><input id="ic_key" value="${esc(cfg.key||'')}" placeholder="예: bnb-아무거나-길게"></div>
+    <div class="field"><label>불러올 기간</label><select id="ic_days">${[31,45,60,90].map(n=>`<option value="${n}" ${Number(cfg.days||60)===n?'selected':''}>오늘부터 ${n}일</option>`).join('')}</select></div>
+    <div style="font-size:13px;margin:8px 0 4px;"><b>연결된 숙소 ${linked.length}곳</b></div>
+    <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">${linked.length ? linked.map(pid=> esc(propById(pid).name)+' · 링크 '+cfg.links[pid].length+'개').join('<br>') : '아직 없어'}</div>
+    <div class="msg" id="ic_msg" style="margin-top:10px;font-size:13px;"></div>
+    <div class="sheet-actions"><button class="cancel-btn" id="ic_x">닫기</button><button class="save-btn" id="ic_go">저장하고 확인</button></div></div>`;
+  document.body.appendChild(root);
+  root.onclick = (ev)=>{ if(ev.target===root) root.remove(); };
+  root.querySelector('#ic_x').onclick = ()=> root.remove();
+  root.querySelector('#ic_go').onclick = async ()=>{
+    const m = root.querySelector('#ic_msg');
+    cfg.proxy = root.querySelector('#ic_proxy').value.trim(); cfg.key = root.querySelector('#ic_key').value.trim(); cfg.days = Number(root.querySelector('#ic_days').value)||60;
+    if(!/^https:\/\/script\.google\.com\//.test(cfg.proxy)){ m.style.color='var(--clay)'; m.textContent = '서버 주소는 https://script.google.com/… 으로 시작해야 해.'; return; }
+    if(!cfg.key){ m.style.color='var(--clay)'; m.textContent = '서버 키를 넣어줘.'; return; }
+    await icalSaveCfg(cfg);
+    if(!icalLinked(cfg).length){ m.style.color='var(--teal)'; m.textContent = '저장했어 ✓ 이제 숙소마다 달력 링크를 넣어줘.'; return; }
+    m.style.color=''; m.textContent = '확인 중…';
+    try{ const fetched = await icalFetch(cfg); root.remove(); await icalShowPreview(cfg, fetched); localStorage.setItem('ical:last','0'); icalAutoCheck(true); }
+    catch(e){ m.style.color='var(--clay)'; m.textContent = '못 불러왔어: '+(e.message||e); }
+  };
+}
+
 function extBannerHtml(){
   if(!isAdmin() || !state.extCfg || !state.extCfg.pw || !extCanAck(state.extCfg)) return '';
   const st = state.extStatus; const cfg = state.extCfg;
@@ -1987,19 +2164,20 @@ async function extRemoveFromDay(ds, pid){
   return true;
 }
 // 청소 취소 의심 목록: 한 건씩 확인하고 카드 지우기 (급한 것 먼저)
-async function openExtCancelSheet(list){
+async function openExtCancelSheet(list, opt){
+  const who = (opt && opt.who) || '대표님 앱';
   list = (list||[]).slice().sort((a,b)=> a.ds<b.ds?-1:1);
   if(!list.length) return;
   return new Promise(resolve=>{
     const root = document.createElement('div'); root.className = 'overlay'; root.id = 'overlayCx';
     const close = ()=>{ root.remove(); resolve(); };
     root.innerHTML = `<div class="sheet" style="max-height:88vh;overflow:auto;"><h2>⚠️ 청소 취소 의심 ${list.length}건</h2>
-      <div class="sf-hint">우리 일정엔 카드가 있는데 <b>대표님 앱에는 청소가 없는 곳</b>이야. 대표님 앱에서 확인하고, 취소가 맞으면 카드를 지워줘. 배정된 직원이 있으면 꼭 따로 알려줘.</div>
+      <div class="sf-hint">우리 일정엔 카드가 있는데 <b>${who}에는 청소가 없는 곳</b>이야. ${who}에서 확인하고, 취소가 맞으면 카드를 지워줘. 배정된 직원이 있으면 꼭 따로 알려줘.</div>
       ${list.map((x,i)=>`<div style="padding:10px 0;border-bottom:1px solid var(--paper-line);display:flex;gap:8px;align-items:center;">
         <div style="flex:1;min-width:0;font-size:13.5px;line-height:1.5;"><b style="${x.urgent?'color:var(--clay);':''}">${x.urgent?'🚨 ':''}${esc(x.label)}</b>${x.urgent?' <span style="font-size:12px;color:var(--clay);">(오늘·내일)</span>':''}
-          <div style="font-size:12px;color:var(--ink-soft);">${x.tentGone?'⏳ 임시 청소였는데 앞 예약이 없어서 사라졌어':x.hostCx?'대표님 앱 추가 일정에 \'청소 일정 취소\' 기록 있음':'대표님 앱 일정에 없음'}${x.worker?' · <b style="color:var(--clay);">배정: '+esc(x.worker)+'</b>':''}</div></div>
+          <div style="font-size:12px;color:var(--ink-soft);">${x.tentGone?'⏳ 임시 청소였는데 앞 예약이 없어서 사라졌어':x.hostCx?'대표님 앱 추가 일정에 \'청소 일정 취소\' 기록 있음':who+' 일정에 없음'}${x.worker?' · <b style="color:var(--clay);">배정: '+esc(x.worker)+'</b>':''}</div></div>
         <button class="pill-btn" data-cx-del="${i}" style="flex-shrink:0;">카드 지우기</button></div>`).join('')}
-      <div class="sheet-actions"><a class="cancel-btn" href="${esc((state.extCfg&&state.extCfg.siteUrl)||'https://dexstreang.github.io/cleaning/')}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center;">대표님 앱 열기</a><button class="save-btn" id="cx_x">닫기</button></div></div>`;
+      <div class="sheet-actions">${who!=='대표님 앱'?'':''}<a class="cancel-btn" ${who!=='대표님 앱'?'hidden ':''}href="${esc((state.extCfg&&state.extCfg.siteUrl)||'https://dexstreang.github.io/cleaning/')}" target="_blank" rel="noopener" style="text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center;">대표님 앱 열기</a><button class="save-btn" id="cx_x">닫기</button></div></div>`;
     document.body.appendChild(root);
     root.onclick = (ev)=>{ if(ev.target===root) close(); };
     root.querySelector('#cx_x').onclick = close;
@@ -2011,7 +2189,9 @@ async function openExtCancelSheet(list){
         const ok = await extRemoveFromDay(x.ds, x.id);
         b.textContent = ok ? '지웠어 ✓' : '이미 없음'; b.style.color = 'var(--teal)';
         if(state.extStatus){ state.extStatus.extra = (state.extStatus.extra||[]).filter(y=> !(y.ds===x.ds && y.id===x.id)); }
+        if(state.icalStatus){ state.icalStatus.extra = (state.icalStatus.extra||[]).filter(y=> !(y.ds===x.ds && y.id===x.id)); }
         if(state.extCancelKeys) state.extCancelKeys.delete(x.ds+'|'+x.id);
+        if(state.icalCancelKeys) state.icalCancelKeys.delete(x.ds+'|'+x.id);
         try{ if(typeof watchMonth==='function' && cloud) watchMonth(); }catch(e){}
         try{ render(); }catch(e){}
       }catch(e){ b.disabled = false; b.textContent = '다시 시도'; miniToast('못 지웠어: '+(e.message||e), true); }
@@ -2993,7 +3173,7 @@ function chipsFor(rec, ds){
     const tasks = (rec.tasks||{})[id] || [];
     const done = Array.isArray((rec.tasks||{})[id]) && (tasks.length ? tasks.every(t=>t.done) : !!(ds && ds <= todayStr()));
     const wt = tasks.find(t=>t.text==='세탁 완료'); const wash = wt ? !!wt.done : null;
-    const cx = !!(ds && state.extCancelKeys && state.extCancelKeys.has(ds+'|'+id));
+    const cx = !!(ds && ((state.extCancelKeys && state.extCancelKeys.has(ds+'|'+id)) || (state.icalCancelKeys && state.icalCancelKeys.has(ds+'|'+id))));
     const tn = extIsTentNote(((rec.dayNotes||{})[id])||'');
     return { id, p, name:(cx?'⚠️취소? ':'')+(tn?'⏳':'')+p.name, tent:tn, cx, pri: pri.includes(id), done, wash, worker: (staffById((rec.assign||{})[id])||{}).name || '' };
   }).filter(Boolean).sort((x,y)=> (y.pri-x.pri) || cmpByColor(x.p, y.p));
@@ -3545,11 +3725,13 @@ function openImportSheet(){
       · <b>대표 카톡 일정표</b> 그대로 (숙소 1곳) — 예) 10월 5일(월) 29~5, 4명 체크인 ■당일<br>
       · <b>날짜별 목록</b> (여러 숙소) — 예) 10/3: 홍대102호, 창천동잇다303호<br>
       이미 등록된 일정은 그대로 두고 없는 것만 추가해. 붙여넣은 내용에 없는 앞으로의 일정은 지울지 물어봐.</div>
+      ${isAdmin() && extCanAck(state.extCfg) ? '<button class="pill-btn" id="imp_ical" style="width:100%;margin-bottom:8px;">📅 에어비앤비 달력 연결 · 불러오기</button>' : ''}
       ${isAdmin() && extCanAck(state.extCfg) ? '<button class="pill-btn" id="imp_ext" style="width:100%;margin-bottom:8px;">🔗 대표님 앱에서 일정 불러오기 (LG팰리스·와우산로)</button>' : ''}
       <textarea id="imp_text" style="width:100%;height:240px;font-size:13px;" placeholder="- 10월 5일(월) 29~5, 4명 체크인 ■당일&#10;- 10월 7일(수) 5~7, 3명 체크인&#10;&#10;또는&#10;10/2: 동교스테이C, 엘지팰리스1208호&#10;10/3: 홍대102호, 서교동복층">${esc(inText)}</textarea>
       <div class="sheet-actions"><button class="cancel-btn" id="imp_cancel">취소</button><button class="save-btn" id="imp_next">다음 (미리보기)</button></div></div>`;
     document.getElementById('imp_cancel').onclick = ()=> root.remove();
     { const ie = document.getElementById('imp_ext'); if(ie) ie.onclick = ()=>{ root.remove(); openExtSheet(); }; }
+    { const ic = document.getElementById('imp_ical'); if(ic) ic.onclick = ()=>{ root.remove(); openIcalSheet(); }; }
     document.getElementById('imp_next').onclick = ()=>{
       inText = document.getElementById('imp_text').value;
       if(isTowelSchedule(inText)){ const td = parseTowelSchedule(inText, y); if(Object.keys(td).length){ stepMap(td); return; } }
@@ -4499,12 +4681,13 @@ function render(){
 
   if(state.tab === 'today'){
     fab.style.display='none';
-    view.innerHTML = extBannerHtml() + renderToday();
+    view.innerHTML = extBannerHtml() + icalBannerHtml() + renderToday();
     attachHandlers();
     setupHistoryIfNeeded();
     view.querySelectorAll('[data-ext-open]').forEach(b=> b.onclick = extOpenFromBanner);
     view.querySelectorAll('[data-ext-ack]').forEach(b=> b.onclick = openExtAckSheet);
     view.querySelectorAll('[data-ext-cx]').forEach(b=> b.onclick = ()=> openExtCancelSheet((state.extStatus||{}).extra||[]));
+    icalBindBanner(view);
   } else if(state.tab === 'all'){
     fab.style.display=isAdmin()?'flex':'none';
     fab.style.alignItems='center';
@@ -4513,11 +4696,12 @@ function render(){
     attachHandlers();
   } else if(state.tab === 'cal'){
     fab.style.display='none';
-    view.innerHTML = extBannerHtml() + renderCalendarTab();
+    view.innerHTML = extBannerHtml() + icalBannerHtml() + renderCalendarTab();
     attachCalHandlers();
     view.querySelectorAll('[data-ext-open]').forEach(b=> b.onclick = extOpenFromBanner);
     view.querySelectorAll('[data-ext-ack]').forEach(b=> b.onclick = openExtAckSheet);
     view.querySelectorAll('[data-ext-cx]').forEach(b=> b.onclick = ()=> openExtCancelSheet((state.extStatus||{}).extra||[]));
+    icalBindBanner(view);
   } else if(state.tab === 'staff'){
     fab.style.display='none';
     view.innerHTML = renderStaffTab();
@@ -5090,7 +5274,7 @@ async function selectScheduleDate(dateKey){
   await loadTodayRecord();
   if(state.selectedDate === dateKey){
     state.dayLoading = false;
-    if(cloud && cloud.user){ watchToday(); watchPhotos(); }
+    if(cloud && cloud.user){ watchToday(); } // 사진 기능은 화면에서 뺐으니 사진 감시도 안 함
     render();
   }
 }
@@ -5165,6 +5349,7 @@ function exportWorkLogCSV(){
 }
 
 function openEditSheet(prop){
+  if(isAdmin() && !state.icalCfg){ icalLoadCfg().then(c=>{ state.icalCfg = c; openEditSheet(prop); }).catch(()=>{ state.icalCfg = { links:{} }; openEditSheet(prop); }); return; }
   state.editing = prop ? {...prop} : {id:null,name:'',owner:'',phone:'',address:'',password:'',out:'',in:'',rooms:'',beds:'',notes:'',parkingUrl:'',parkingId:'',parkingPw:'',alwaysPriority:false};
   const e = state.editing;
   const root = document.createElement('div');
@@ -5196,6 +5381,11 @@ function openEditSheet(prop){
       <div class="field"><label>청소 지급 단가(원) · 직원에게 주는 금액 (배정 현황에서 계산)</label><input id="f_payRate" inputmode="numeric" value="${esc(String(e.payRate||''))}" placeholder="예: 25000">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${[25000,35000,40000,45000].map(v=>`<button type="button" class="pill-btn" data-pay-preset="${v}">${v/10000}만</button>`).join('')}</div></div>
       <div class="field"><label>청소시간(분) · 비우면 크기로 자동 계산</label><input id="f_cleanMin" inputmode="numeric" value="${esc(e.cleanMin||'')}" placeholder="예: 90"></div>
+      ${isAdmin() ? `<div class="field"><label>📅 달력 링크 (에어비앤비 '달력 내보내기' · 여러 사이트면 줄마다 하나)</label><textarea id="f_ical" placeholder="https://www.airbnb.co.kr/calendar/ical/….ics?s=…" style="min-height:60px;font-size:12px;">${esc(((state.icalCfg||{}).links||{})[e.id]?.join('\n')||'')}</textarea></div>
+      <div class="field-grid">
+        <div class="field"><label>기본 작은수건 (비우면 안 적음)</label><input id="f_towelS" inputmode="numeric" value="${esc(String(e.towelS??''))}"></div>
+        <div class="field"><label>기본 큰수건</label><input id="f_towelB" inputmode="numeric" value="${esc(String(e.towelB??''))}"></div>
+      </div>` : ''}
       <div style="font-size:12px;color:var(--ink-soft);margin:6px 0;">체크할 항목·수거만 설정은 오늘탭 숙소 카드의 ⚙️ 에서 바꿔.</div>
       <label class="picker-row" style="margin-top:4px;">
         <input type="checkbox" id="f_alwaysPriority" ${e.alwaysPriority?'checked':''}>
@@ -5233,15 +5423,26 @@ function openEditSheet(prop){
       dailyPass: !!e.dailyPass,
       noTasks: e.noTasks||[],
     };
+    { const ts = document.getElementById('f_towelS'), tb = document.getElementById('f_towelB');
+      if(ts){ const v = ts.value.replace(/[^0-9]/g,''); vals.towelS = v==='' ? '' : Number(v); }
+      if(tb){ const v = tb.value.replace(/[^0-9]/g,''); vals.towelB = v==='' ? '' : Number(v); } }
+    const icalBox = document.getElementById('f_ical');
+    const icalLinks = icalBox ? icalBox.value.split(/\s+/).map(x=>x.trim()).filter(x=>/^https?:\/\//.test(x)) : null;
     if(!vals.name){ alert('상호명은 필수야.'); return; }
+    let savedPid = e.id;
     if(e.id){
       const idx = state.properties.findIndex(p=>p.id===e.id);
       state.properties[idx] = {...state.properties[idx], ...vals};
     } else {
       const newId = 'p' + (Date.now());
-      state.properties.push({id:newId, ...vals});
+      state.properties.push({id:newId, ...vals}); savedPid = newId;
     }
     const savedOk = await saveProperties();
+    if(icalLinks){ try{
+      const ic = await icalLoadCfg(); const before = (ic.links[savedPid]||[]).join('\n');
+      if(icalLinks.length) ic.links[savedPid] = icalLinks; else delete ic.links[savedPid];
+      if(before !== icalLinks.join('\n')){ await icalSaveCfg(ic); try{ localStorage.setItem('ical:last','0'); }catch(_){} setTimeout(()=>icalAutoCheck(true), 500); }
+    }catch(err){ alert('달력 링크 저장에 실패했어: '+(err.message||err)); } }
     root.remove();
     if(savedOk) miniToast('저장됨 ✓');
     let applied = 0;
@@ -6375,7 +6576,7 @@ function watchShared(){
     safeRender();
   });
   watchToday();
-  watchPhotos();
+  // watchPhotos(); 사진 기능은 화면에서 뺐으니 사진 감시도 안 함 (Firebase 읽기 절약)
   watchMonth();
 }
 async function uploadLocalData(){
@@ -6466,6 +6667,9 @@ async function startApp(){
   setTimeout(()=>extAutoCheck(false), 2500);
   document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') extAutoCheck(false); });
   setInterval(()=>{ if(document.visibilityState==='visible') extAutoCheck(false); }, 60*1000); // 켜 둔 동안 10분마다
+  setTimeout(()=>icalAutoCheck(false), 4000);
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') icalAutoCheck(false); });
+  setInterval(()=>{ if(document.visibilityState==='visible') icalAutoCheck(false); }, 60*1000); // 30분마다
   undoAvailOffMode();
   // 관리자 첫 로그인: 서버가 비어 있고 이 폰에 예전 데이터가 있으면 올릴지 물어봄
   if(cloud && isAdmin() && state.properties.length === 0 && localStorage.getItem(KEY_PROPS)){
