@@ -515,7 +515,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "454006613109",
   appId: "1:454006613109:web:589a7ed412af59e358843c"
 };
-const APP_BUILD = '1102-112';
+const APP_BUILD = '1102-113';
 const ADMIN_EMAILS = ['leeje@bnbcare.com','anyj@bnbcare.com','hanjs@bnbcare.com'];
 const EMAIL_DOMAIN = '@bnbcare.com';
 const FB_VER = '10.14.1';
@@ -523,7 +523,9 @@ let cloud = null; // { auth, db, user, fn }
 const isAdmin = () => !CLOUD_ENABLED || !!(cloud && cloud.user && ADMIN_EMAILS.includes((cloud.user.email||'').toLowerCase()));
 
 // 공유되는 데이터(숙소, 직원, 날짜별 일정, 보고기록)만 서버에 저장. 나머지(시급, 출퇴근, 카카오키 등)는 이 폰에만 저장
-const isSharedKey = k => CLOUD_ENABLED && (k==='properties:list' || k==='staff:list' || k==='report-log:list' || k.startsWith('today:') || k.startsWith('actlog:'));
+// 연동 설정도 회사 서버에 (예전엔 기기에만 저장돼서 다른 폰에서 못 읽었음 → 기기에 남은 값은 처음 읽을 때 서버로 옮김)
+const SYNC_SHARED_KEYS = ['ext:hostapp','ext:sent','ext:acklog','ical:cfg'];
+const isSharedKey = k => CLOUD_ENABLED && (k==='properties:list' || k==='staff:list' || k==='report-log:list' || k.startsWith('today:') || k.startsWith('actlog:') || SYNC_SHARED_KEYS.includes(k));
 const localStore = {
   async get(key){ const raw = localStorage.getItem(key); return (raw===null||raw===undefined) ? null : { key, value: raw }; },
   async set(key, value){ localStorage.setItem(key, value); return { key, value }; },
@@ -539,7 +541,12 @@ window.storage = {
         try{ const cs = await cloud.fn.getDocFromCache(kvDoc(key)); if(cs.exists()) return { key, value: cs.data().value }; }catch(e){}
       }
       const snap = await cloud.fn.getDoc(kvDoc(key));
-      return snap.exists() ? { key, value: snap.data().value } : null;
+      if(snap.exists()) return { key, value: snap.data().value };
+      if(SYNC_SHARED_KEYS.includes(key)){
+        let old = null; try{ old = localStorage.getItem(key); }catch(e){}
+        if(old){ try{ await cloud.fn.setDoc(kvDoc(key), { value: old, updatedAt: Date.now(), by: cloud.user.email, migrated: true }); }catch(e){} return { key, value: old }; }
+      }
+      return null;
     }
     return localStore.get(key);
   },
